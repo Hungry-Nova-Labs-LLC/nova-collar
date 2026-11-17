@@ -43,6 +43,8 @@ assert.equal(pendingApprovals().length, 0);
 assert.equal(readFileSync(file, 'utf8'), original);
 for (const command of ['Remove-Item -Recurse project', 'rm -rf project', 'git reset --hard', 'npm install', 'python -c "print(1)"', 'node test.js', 'cat a > b', 'Get-Content a; Remove-Item b', 'node --check file.js --require module', 'git diff --output=result.txt']) assert.ok(commandNeedsApproval(command), command);
 for (const command of ['pwd', 'git status --short', 'Get-Content -LiteralPath sample.txt', "node --check 'sample.js'"]) assert.equal(commandNeedsApproval(command), false, command);
+for (const command of ['hostname', 'hostname -f', 'hostname -s', 'hostname -d']) assert.equal(commandNeedsApproval(command), false, command);
+for (const command of ['hostname fixture-name', 'hostname -F file', 'hostname --file file', 'hostname -b fixture-name']) assert.equal(commandNeedsApproval(command), true, command);
 assert.ok(assessAction('term_send', {text:'r', enter:false}));
 assert.ok(assessAction('host_file_write', {path:join(home,'outside.txt'), content:'hi'}));
 assert.ok(assessAction('host_file_write', {path:join(cwd,'new.txt'), content:'hi'}, {tasker:'user'}));

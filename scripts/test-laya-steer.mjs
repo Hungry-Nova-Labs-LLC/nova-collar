@@ -48,8 +48,8 @@ assert.equal(watchJailbreak("What is an API key?"), false);
 assert.equal(watchJailbreak("Explain a password without printing one."), false);
 assert.equal(watchJailbreak("The tests pass"), false);
 
-assert.equal(toolSig("host_disk", ""), "host_disk:{}");
-assert.equal(toolSig("mac_click", "{\"y\":80,\"x\":420}"), "mac_click:{\"x\":420,\"y\":80}");
+assert.match(toolSig("host_disk", ""), /^host_disk:[a-f0-9]{64}$/);
+assert.equal(toolSig("mac_click", "{\"y\":80,\"x\":420}"), toolSig("mac_click", "{\"x\":420,\"y\":80}"));
 
 const trace = loopTrace({
   ask: "How full is the disk on this Mac?",

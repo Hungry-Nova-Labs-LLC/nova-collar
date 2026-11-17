@@ -87,10 +87,10 @@ assert(finishToolCalls(aliasCall)[0].function.name === "host_run", "finish rewri
 const calls = new Map();
 applyToolDelta(calls, { index: 0, id: "a", function: { name: "host_file_read", arguments: "" } });
 applyToolDelta(calls, { index: 0, id: "a", function: { name: "host_file_read", arguments: "{\"path\"" } });
-applyToolDelta(calls, { index: 0, id: "a", function: { name: "host_file_read", arguments: "{\"path\":\"x\"}" } });
+applyToolDelta(calls, { index: 0, id: "a", function: { name: "host_file_read", arguments: ":\"x\"}" } });
 const once = finishToolCalls(calls, { max: 3 });
 assert(once.length === 1 && once[0].function.name === "host_file_read", "streamed repeat name is one call");
-assert(once[0].function.arguments === "{\"path\":\"x\"}", "args grow instead of stacking");
+assert(once[0].function.arguments === "{\"path\":\"x\"}", "argument deltas concatenate");
 
 const mash = new Map();
 applyToolDelta(mash, { index: 0, function: { name: "host_runhost_facts", arguments: "{\"command\":\"ps\"}" } });
@@ -139,7 +139,11 @@ const cleared = scoreTurn([
   { role: "step", name: "harness", ok: true, blurb: "compile ok" },
   { role: "assistant", content: "PASS py_compile" },
 ]);
-assert(cleared.misses.length === 0, "a later harness pass clears the miss");
+assert(cleared.misses.length > 0, "an unscoped later harness pass cannot clear a miss");
+const scopedFailure = { role: "step", name: "harness", ok: false, blurb: "run failed app.js", verification: { path: "/project/app.js", project: "/project", phase: "runtime", requiredPhase: "runtime", remote: false, status: "failed" } };
+const scopedPass = { role: "step", name: "harness", ok: true, blurb: "run ok app.js", verification: { ...scopedFailure.verification, status: "passed" } };
+assert(scoreTurn([scopedFailure, scopedPass, { role: "assistant", content: "PASS" }]).misses.length === 0, "same-path equal-strength evidence clears the matching miss");
+assert(scoreTurn([scopedFailure, { ...scopedPass, verification: { ...scopedPass.verification, phase: "syntax" } }, { role: "assistant", content: "PASS" }]).misses.length > 0, "a syntax pass leaves a runtime miss unresolved");
 
 const lookedUp = scoreTurn([
   { role: "user", content: "Who founded Hungry Nova?" },
@@ -286,8 +290,9 @@ const softMiss = await softGate.after(
   JSON.stringify({ path: join(dir, "soft.js"), content: "console.log(1)\n" }),
   { ok: true, path: join(dir, "soft.js") },
 );
-assert(softMiss?.ok === false && /asks open/i.test(softMiss.blurb), "soft checklist blocks a pass");
-assert(softGate.debt().some((item) => /thrust|soft\.js/.test(item)), "open soft ask stays in debt");
+assert(softMiss?.ok === true && /unverified.*advisory/i.test(softMiss.blurb), "real checks pass while prose requirements remain explicitly unverified");
+assert(softMiss.advisories.some((item) => item.requirement.includes("thrust") && item.status === "unverified" && item.blocking === false), "soft requirements are observations, never automatically passed");
+assert(softGate.debt().length === 0, "prose vocabulary is not a fabricated verification failure");
 
 const pageAsk = "- A toolbar 48px tall sits on the top edge\ncheck.js prints MIX_OK after the colors mix";
 assert(proofAsks(pageAsk).includes("check.js prints MIX_OK"), "a print line stays in the checklist");
@@ -298,7 +303,7 @@ const layoutMiss = await pageGate.after(
   JSON.stringify({ path: join(dir, "colors.js"), content: "export const n = 1\n" }),
   { ok: true, path: join(dir, "colors.js") },
 );
-assert(layoutMiss?.ok === false && /asks open/i.test(layoutMiss.blurb), "the window ask stays open after the script");
+assert(layoutMiss?.ok === false && /MIX_OK/i.test(layoutMiss.blurb), "the concrete output proof stays open independently of advisory layout prose");
 assert(!pageGate.debt().some((item) => item.includes("colors.js")), "a clean script is not called a failed write");
 const pageHtml = "<html><body><div class=\"toolbar\" style=\"height:48px\">48px tall sits on the top edge</div></body></html>\n";
 writeFileSync(join(dir, "index.html"), pageHtml);
@@ -434,10 +439,13 @@ const hung = await probePath(join(dir, "hang.py"), "import time\ntime.sleep(20)\
 assert(hung?.ok === false && /hung|timed out/i.test(`${hung.blurb} ${hung.error}`), "timeout is a FAIL");
 
 assert(shellTargets(`cat > ${join(dir, "made.py")}`).includes(join(dir, "made.py")), "shell targets from redirect");
+const redirectHarness = createHarness({ ask: "prints 4. use python not go" });
+const redirectArgs = JSON.stringify({ command: `cat > ${join(dir, "made.py")}` });
+redirectHarness.before("bash", redirectArgs);
 writeFileSync(join(dir, "made.py"), "print(4)\n");
-const viaRedirect = await createHarness({ ask: "prints 4. use python not go" }).after(
+const viaRedirect = await redirectHarness.after(
   "bash",
-  JSON.stringify({ command: `cat > ${join(dir, "made.py")}` }),
+  redirectArgs,
   { ok: true },
 );
 assert(viaRedirect?.ok === true, "bash-created code is compiled and run");
@@ -449,7 +457,8 @@ const unread = createHarness().before("write_file", JSON.stringify({ path: fatPa
 assert(unread?.ok === false && /read first/i.test(unread.blurb), "overwrite of a substantial file requires a read");
 
 assert(verifyCommand(join(dir, "x.go")).command.includes("go build"), "go files use go build");
-assert(verifyCommand(join(dir, "x.ts")).command.includes("tsc"), "ts files typecheck");
+const tsSyntaxPlan = verifyCommand(join(dir, "x.ts"));
+assert(tsSyntaxPlan.command.includes("stripTypeScriptTypes") && !/\bnpx\b|\btsc\b/.test(tsSyntaxPlan.command), "ts files use native syntax-only checks without installing a typechecker");
 writeFileSync(join(dir, "ok.sh"), "echo hi\n");
 assert(verifyCommand(join(dir, "ok.sh")).command.includes("bash -n"), "shell files are syntax-checked");
 const shOk = await verifyPath(join(dir, "ok.sh"));

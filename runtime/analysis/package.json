@@ -4,5 +4,14 @@
   "private": true,
   "type": "module",
   "license": "Apache-2.0",
-  "dependencies": { "rea-agents": "6.4.0" }
+  "dependencies": {
+    "rea-agents": "6.4.0"
+  },
+  "overrides": {
+    "rea-agents": {
+      "zod": "4.6.7",
+      "@electron/asar": "4.3.2"
+    },
+    "fast-uri": "3.1.9"
+  }
 }

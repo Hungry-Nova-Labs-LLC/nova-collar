@@ -4,11 +4,12 @@
 const { execFileSync } = require("node:child_process");
 const { existsSync, unlinkSync } = require("node:fs");
 const path = require("node:path");
-const { authArgs, notarize, staple } = require("./notary.cjs");
+const { authArgs, notarize, staple, localPackOnly, verifyCompanySignature } = require("./notary.cjs");
 
 exports.default = async function afterSign(context) {
   const { electronPlatformName, appOutDir } = context;
   if (electronPlatformName !== "darwin") return;
+  if (localPackOnly()) return;
 
   const auth = authArgs();
   if (!auth) {
@@ -24,6 +25,7 @@ exports.default = async function afterSign(context) {
   }
 
   const zipPath = path.join(appOutDir, `${appName}.notarize.zip`);
+  verifyCompanySignature(appPath);
   console.log(`notarize: packaging ${appName}.app for submission…`);
   execFileSync("ditto", ["-c", "-k", "--keepParent", appPath, zipPath], { stdio: "inherit" });
 

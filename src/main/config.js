@@ -1,29 +1,19 @@
-import { createRequire } from "node:module";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { homedir, hostname } from "node:os";
-import { dirname, join, resolve } from "node:path";
+import { existsSync, lstatSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { randomUUID } from "node:crypto";
+import { hostname } from "node:os";
+import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { allowServiceUrl, publicHttpsUrl } from "./safe.js";
 import { lanesFrom, splitLabel } from "./split.js";
-import { getCatalog, catalogState } from "./model-catalog.js";
+import { getCatalog, catalogState, isEmbeddingOnlyModel } from "./model-catalog.js";
+import { mainProfileHome, runtimeElectronApp } from "./profile-paths.js";
 
-function electronApp() {
-  if (!process.versions.electron || process.env.ELECTRON_RUN_AS_NODE) return null;
-  try {
-    return createRequire(import.meta.url)("electron").app;
-  } catch {
-    return null;
-  }
-}
-
-const app = electronApp();
+const app = runtimeElectronApp();
 const srcRoot = join(dirname(fileURLToPath(import.meta.url)), "../..");
 export const ROOT = app?.isPackaged ? app.getAppPath() : srcRoot;
-export const APP_HOME = (() => {
-  const override = String(process.env.NOVAPUP_HOME || "").trim();
-  if (override && !app?.isPackaged) return resolve(override);
-  return join(homedir(), ".novapup");
-})();
+export const BUILD_CHANNEL = "public";
+export const APP_NAME = "Nova Collar";
+export const APP_HOME = mainProfileHome({ packaged: Boolean(app?.isPackaged) });
 export const BIN = app?.isPackaged
   ? join(process.resourcesPath, "mac-control")
   : join(srcRoot, "bin/mac-control");
@@ -37,10 +27,11 @@ export const LAYA_DATA = app?.isPackaged ? process.resourcesPath : join(srcRoot,
 export const MODEL_HOME = app?.isPackaged ? APP_HOME : srcRoot;
 
 export const LOCAL_ID = "local-3.8";
-export const LOCAL_OLLAMA_MODEL = "qwen3.8:27b-mlx";
+// A new profile discovers an available model instead of assuming a download.
+export const LOCAL_OLLAMA_MODEL = "";
 
 export const MODELS = [
-  { id: LOCAL_ID, label: "Local 3.8", hint: "this system" },
+  { id: LOCAL_ID, label: "Local model", hint: "this system" },
   { id: "nova-pup:3.8", label: "Nova 3.8", hint: "remote" },
   { id: "HNL27b", label: "HNL 27B", hint: "27B" },
   { id: "nova-pup", label: "Nova Pup", hint: "chat" },
@@ -87,6 +78,7 @@ const DEFAULTS = {
   HNL_MODEL: LOCAL_ID,
   OLLAMA_URL: "http://127.0.0.1:11434/v1",
   OLLAMA_MODEL: LOCAL_OLLAMA_MODEL,
+  NOVA_LOCAL_API_KEY: "",
   HNL_CHAT_KEY: "",
   HNL_TOOLS_KEY: "",
   HNL_COMFY_URL: "",
@@ -96,6 +88,7 @@ const DEFAULTS = {
 };
 
 export function ensureHome() {
+  mkdirSync(APP_HOME, { recursive: true, mode: 0o700 });
   mkdirSync(join(APP_HOME, "shots"), { recursive: true });
   mkdirSync(join(APP_HOME, "sessions"), { recursive: true });
   const personality = join(APP_HOME, "personality.md");
@@ -127,8 +120,9 @@ function parseEnv(text, into) {
 export function loadConfig() {
   ensureHome();
   const cfg = { ...DEFAULTS, ...process.env };
+  const explicit = { ...process.env };
   for (const file of [join(ROOT, ".env"), join(APP_HOME, "env")]) {
-    if (existsSync(file)) parseEnv(readFileSync(file, "utf8"), cfg);
+    if (existsSync(file)) { const text = readFileSync(file, "utf8"); parseEnv(text, cfg); parseEnv(text, explicit); }
   }
   return {
     chatUrl: allowServiceUrl(cfg.HNL_CHAT_URL, "chat") || DEFAULTS.HNL_CHAT_URL,
@@ -138,6 +132,11 @@ export function loadConfig() {
     model: normalizeModel(cfg.HNL_MODEL || DEFAULTS.HNL_MODEL),
     localUrl: allowServiceUrl(cfg.OLLAMA_URL, "local") || DEFAULTS.OLLAMA_URL,
     localModel: String(cfg.OLLAMA_MODEL || DEFAULTS.OLLAMA_MODEL).trim(),
+    localKey: String(cfg.NOVA_LOCAL_API_KEY || "").trim(),
+    localUrlExplicit: Boolean(allowServiceUrl(explicit.OLLAMA_URL, "local")),
+    localUrlRejected: Boolean(String(explicit.OLLAMA_URL || "").trim() && !allowServiceUrl(explicit.OLLAMA_URL, "local")),
+    hasExplicitConnection: ["HNL_MODEL", "HNL_CHAT_URL", "HNL_CHAT_KEY", "HNL_TOOLS_KEY", "OLLAMA_MODEL", "NOVA_LOCAL_API_KEY"]
+      .some(key => Boolean(String(explicit[key] || "").trim())),
     comfyUrl: String(cfg.HNL_COMFY_URL || DEFAULTS.HNL_COMFY_URL).replace(/\/$/, ""),
     comfyFallback: String(cfg.HNL_COMFY_FALLBACK || DEFAULTS.HNL_COMFY_FALLBACK).replace(/\/$/, ""),
     comfyModel: String(cfg.HNL_COMFY_MODEL || DEFAULTS.HNL_COMFY_MODEL).trim(),
@@ -164,6 +163,7 @@ function writeEnv(current, patch = {}) {
     HNL_MODEL: normalizeModel(patch.model ?? current.model),
     OLLAMA_URL: patch.localUrl ?? current.localUrl,
     OLLAMA_MODEL: patch.localModel ?? current.localModel,
+    NOVA_LOCAL_API_KEY: patch.localKey ?? current.localKey ?? "",
     HNL_COMFY_URL: current.comfyUrl,
     HNL_COMFY_FALLBACK: current.comfyFallback,
     HNL_COMFY_MODEL: current.comfyModel,
@@ -178,7 +178,17 @@ function writeEnv(current, patch = {}) {
   };
   // Strip control characters so a pasted key or URL cannot inject extra env lines.
   const clean = (value) => String(value ?? "").replace(/[\r\n]+/g, " ").replace(/[\u0000-\u001f\u007f]/g, "").trim();
-  writeFileSync(join(APP_HOME, "env"), Object.entries(next).map(([key, value]) => `${key}=${clean(value)}`).join("\n") + "\n");
+  const destination = join(APP_HOME, "env");
+  let previous;
+  try {previous=lstatSync(destination);} catch(error) {if(error.code !== "ENOENT")throw error;}
+  if (previous && (previous.isSymbolicLink() || !previous.isFile() || !(previous.mode & 0o200))) {
+    const error=new Error("Nova Collar settings are read-only or are not an ordinary file.");error.code="EACCES";throw error;
+  }
+  const temporary = join(APP_HOME, `.env-save-${randomUUID()}.tmp`);
+  try {
+    writeFileSync(temporary, Object.entries(next).map(([key, value]) => `${key}=${clean(value)}`).join("\n") + "\n", {mode:0o600,flag:"wx",flush:true});
+    renameSync(temporary,destination);
+  } finally {rmSync(temporary,{force:true});}
   return loadConfig();
 }
 
@@ -197,11 +207,18 @@ export function saveKeys({ chatKey, toolsKey, model, chatUrl }) {
   return writeEnv(loadConfig(), { ...reset, chatKey, toolsKey, model, chatUrl: url });
 }
 
-export function saveLocalModel({ url, model }) {
+export function saveLocalModel({ url, model, apiKey }) {
   ensureHome();
-  return writeEnv(loadConfig(), {
-    localUrl: String(url || "").replace(/\/$/, ""),
-    localModel: String(model || "").trim(),
+  const current = loadConfig();
+  const localUrl = allowServiceUrl(url, "local");
+  const localModel = String(model || "").trim();
+  if (!localUrl || !localModel || localModel.length > 512 || /[\x00-\x1f\x7f]/.test(localModel) || isEmbeddingOnlyModel({id:localModel})) {
+    return {...publicState(current), urlRejected:"Choose a loopback server and a chat model."};
+  }
+  return writeEnv(current, {
+    localUrl,
+    localModel,
+    localKey: apiKey === undefined ? localUrl === current.localUrl ? current.localKey : "" : String(apiKey || "").trim(),
     model: LOCAL_ID,
     // Local selection owns the whole turn; old remote roles must not keep routing it.
     fastUrl: "", fastModel: "", fastKey: "",
@@ -247,7 +264,7 @@ export function readMemory() {
 
 export function chatTarget(cfg = loadConfig()) {
   if (isLocalModel(cfg.model)) {
-    return { url: cfg.localUrl, model: cfg.localModel, key: "ollama", local: true };
+    return { url: cfg.localUrl, model: cfg.localModel, key: cfg.localKey || "ollama", local: true };
   }
   return { url: cfg.chatUrl, model: cfg.model, key: cfg.chatKey || cfg.toolsKey, local: false };
 }
@@ -257,18 +274,20 @@ function modelChoices(cfg) {
   const rows = catalog ? [MODELS[0], ...catalog.models] : [...MODELS];
   for (const model of [cfg.model, cfg.fastModel, cfg.thinkModel]) {
     const id = model && normalizeModel(model);
-    if (id && !rows.some(row => row.id === id)) rows.push({ id, label: id, hint: "saved" });
+    if (id && !isEmbeddingOnlyModel({ id }) && !rows.some(row => row.id === id)) rows.push({ id, label: id, hint: "saved" });
   }
   return rows;
 }
 
 export function publicState(cfg = loadConfig()) {
   return {
-    ready: isLocalModel(cfg.model) || Boolean(cfg.chatKey || cfg.toolsKey),
+    ready: isLocalModel(cfg.model) ? Boolean(cfg.localModel && !isEmbeddingOnlyModel({id:cfg.localModel})) : Boolean(cfg.chatUrl && (cfg.chatKey || cfg.toolsKey)),
+    hasExplicitConnection: Boolean(cfg.hasExplicitConnection),
+    hasLocalKey: Boolean(cfg.localKey),
     hasToolsKey: Boolean(cfg.toolsKey),
     hasComfy: Boolean(cfg.comfyUrl || cfg.comfyFallback),
     model: cfg.model,
-    models: modelChoices(cfg).map((row) => row.id === LOCAL_ID ? { ...row, label: `Local: ${cfg.localModel}` } : row),
+    models: modelChoices(cfg).filter(row=>row.id !== LOCAL_ID || cfg.localModel).map((row) => row.id === LOCAL_ID ? { ...row, label: `Local: ${cfg.localModel}` } : row),
     ...catalogState(cfg),
     chatUrl: isLocalModel(cfg.model) ? cfg.localUrl : cfg.chatUrl,
     toolsUrl: cfg.toolsUrl,

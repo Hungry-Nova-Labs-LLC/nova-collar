@@ -1,3 +1,5 @@
+import { randomUUID } from "node:crypto";
+import { createConversationCoordinator } from "./conversation.js";
 import { analysisBundle, analysisManager } from "./analysis-runtime.js";
 import { networkRuntime } from './network-runtime.js';
 import { app, BrowserWindow, clipboard, dialog, ipcMain, shell } from "electron";
@@ -6,8 +8,9 @@ import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir, platform } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { runTurn } from "./agent.js";
-import { APP_HOME, BIN, ensureHome, isLocalModel, loadConfig, markSetupDone, publicState, readMemory, saveKeys, saveLane, saveLocalModel } from "./config.js";
+import { previewContextInfo, runTurn } from "./agent.js";
+import { contextView, lastContextSnapshot } from "./context.js";
+import { APP_HOME, APP_NAME, BUILD_CHANNEL, BIN, ensureHome, isLocalModel, loadConfig, markSetupDone, publicState, readMemory, saveKeys, saveLane, saveLocalModel } from "./config.js";
 import { isBotId, isChatId, redactSecrets, safePack } from "./safe.js";
 import { setDeskGuard } from "./mac.js";
 import { packPublic } from "./packs.js";
@@ -23,16 +26,18 @@ import { draftVoices } from "./voice.js";
 import { writeMemory } from "./files.js";
 import { watchJailbreak } from "./laya-steer.js";
 import { createTimeline, mergeAssistants } from "./timeline.js";
-import { appendTerm, bindPty, sendTerminal } from "./term-bridge.js";
+import { appendTerm, bindPty, closeTerminal, sendTerminal } from "./term-bridge.js";
 import { beginTurn, endTurn } from "./guard.js";
 import { bindTermPid, getWorkdir, loadWorkdir, noteTermActivity, onWorkdir, setWorkdir, watchShellCwd } from "./workdir.js";
 import { startLaya, stopLaya } from "./laya.js";
-import { ensureOllama, scanLocalModels } from "./setup.js";
+import { ensureOllama, scanLocalModels, normalizeLocalUrl } from "./setup.js";
+import { bootstrapConnection } from "./install.js";
 import { cdCommand, shellLaunch, terminalEnv } from "./platform.js";
 import { cancelApprovals, pendingApprovals, resolveApproval, setApprovalNotifier } from "./approvals.js";
 import { completeSpec, readSpec, writeSpec } from "./spec.js";
 import { refreshCatalog } from "./model-catalog.js";
 import { cleanModelHistory } from "./model-history.js";
+import { acknowledgeRecoveryOperation, recoverSession, recoveryOperations, recoveryPointSummaries } from "./recovery-points.js";
 
 const pty = createRequire(import.meta.url)("node-pty");
 
@@ -44,12 +49,23 @@ let currentGoal = "";
 let currentArchive = [];
 let currentBot = null;
 let localServers = [];
+let setupReport = null;
 let turnAbort = null;
+let conversationToken = null;
+let incorporatedIds = [];
+let activeTurnState = { active: false, inFlight: "" };
+let readOnlySession = false;
+const conversations = createConversationCoordinator({ onChange: (state, sessionId) => {
+  if (sessionId === currentId) send({ type: "conversation", ...state });
+} });
 const history = [];
 let inferenceHistory = [];
 
 function send(payload) {
-  win?.webContents.send("pup", payload);
+  // Native terminal and background events can arrive after window teardown.
+  // Do not access webContents on a destroyed BrowserWindow.
+  if (!win || win.isDestroyed() || win.webContents.isDestroyed()) return;
+  win.webContents.send("pup", payload);
 }
 
 function fromWindow(event) {
@@ -75,7 +91,7 @@ function savedBounds() {
   } catch {
     /* first run */
   }
-  return { width: 420, height: 580 };
+  return { width: 1280, height: 860 };
 }
 
 let boundsTimer = null;
@@ -94,8 +110,8 @@ function createWindow() {
     height: bounds.height,
     x: bounds.x,
     y: bounds.y,
-    minWidth: 280,
-    minHeight: 320,
+    minWidth: 420,
+    minHeight: 580,
     show: false,
     frame: false,
     transparent: false,
@@ -149,6 +165,8 @@ function startPty() {
   });
   bindPty(term);
   bindTermPid(term.pid);
+  const ownedTerminal = term;
+  ownedTerminal.onExit(()=>{if(term === ownedTerminal)term=null;});
   let termBuf = "";
   let termFlush = null;
   term.onData((data) => {
@@ -181,8 +199,12 @@ function snapshot() {
   return {
     ...publicState(cfg),
     approvals: pendingApprovals(),
+    channel: BUILD_CHANNEL,
+    conversation: currentId ? { ...conversations.snapshot(currentId), readOnly: readOnlySession } : null,
+    contextInfo: currentId ? lastContextSnapshot(currentId) : null,
     analysis: analysisManager.status(),
     localModels: localServers.flatMap((server) => server.models.map((model) => ({ url: server.url, model }))),
+    setupReport,
     npReady: existsSync(join(homedir(), ".local", "bin", "np")),
     packs: [
       ...packPublic(),
@@ -205,6 +227,7 @@ function snapshot() {
 }
 
 let boardBusy = false;
+let boardAbort = null;
 
 async function runScheduled(job) {
   const task = job?.task;
@@ -215,6 +238,9 @@ async function runScheduled(job) {
   const session = readSession(bot.id);
   const prior = session?.messages || [];
   const signal = new AbortController();
+  boardAbort = signal;
+  let token = null;
+  const steps = [];
   const text = [
     task.title,
     task.detail || "",
@@ -224,7 +250,17 @@ async function runScheduled(job) {
     job.note ? `Another goal you can help: ${job.note}` : "",
   ].filter(Boolean).join("\n");
   try {
-    const result = await runTurn(prior, text, () => {}, signal.signal, {
+    try { token = conversations.start(bot.id); } catch { return { skip: true }; }
+    beginTurn({ signal: signal.signal, workdir: getWorkdir() });
+    const result = await runTurn(session?.modelMessages?.length ? session.modelMessages : prior, text, event => {
+      if (event.type === "tool_result") steps.push({ role: "step", ...event });
+    }, signal.signal, {
+      sessionId: bot.id,
+      onProgress: (rows, inFlight) => {
+        const wire = [...rows];
+        if (inFlight) wire.push({ role: "tool", tool_call_id: inFlight.id, content: `Interrupted ${inFlight.name}: outcome unknown. Inspect before retrying.` });
+        persistSession(bot.id, [...prior, { role: "user", content: text }, ...steps], { title: bot.name, modelMessages: wire, turnState: { active: true, inFlight: inFlight?.name || "" } });
+      },
       bot: readBot(bot.id) || bot,
       pack: bot.pack,
       goal: task.goal,
@@ -236,7 +272,7 @@ async function runScheduled(job) {
     const assistant = result?.assistant || "";
     let chatId = task.chatId || "";
     if (assistant) {
-      persistSession(bot.id, [...prior, { role: "user", content: text }, { role: "assistant", content: assistant }], { title: bot.name });
+      persistSession(bot.id, [...prior, { role: "user", content: text }, ...steps, { role: "assistant", content: assistant }], { title: bot.name, modelMessages: result.messages || [], turnState: { active: false, inFlight: "" } });
       const chat = fileChat({
         id: chatId,
         title: `Pack · ${task.title}`,
@@ -251,6 +287,9 @@ async function runScheduled(job) {
   } catch (error) {
     return { assistant: "", error: redactSecrets(error.message || "Run failed.") };
   } finally {
+    endTurn();
+    if (token) conversations.finish(token, { reason: signal.signal.aborted ? "stopped" : "finished" });
+    boardAbort = null;
     boardBusy = false;
   }
 }
@@ -287,14 +326,45 @@ function applyWorkdir(path, opts = {}) {
   return next;
 }
 
-function useSession(session) {
+function useSession(session, { reconcile = true } = {}) {
+  incorporatedIds = session.inputIds || [];
+  readOnlySession = false;
+  if (reconcile) try { conversations.reconcile(session.id, incorporatedIds); }
+  catch (error) {
+    if (error.code !== "LEAD_BUSY") throw error;
+    readOnlySession = true;
+  }
   currentId = session.id;
   currentGoal = String(session.goal || "");
   currentArchive = Array.isArray(session.archive) ? session.archive : [];
   history.length = 0;
   history.push(...session.messages);
   inferenceHistory = session.modelMessages?.length ? cleanModelHistory(session.modelMessages) : mergeAssistants(history);
+  activeTurnState = session.turnState || { active: false, inFlight: "" };
+  if (!readOnlySession && session.turnState?.active) {
+    const note = session.turnState.inFlight
+      ? `Previous turn interrupted during ${session.turnState.inFlight}. Its outcome is unknown. Inspect external state before retrying.`
+      : "Previous turn interrupted. Completed evidence is saved. Send a message or choose Continue to resume deliberately.";
+    history.push({ role: "assistant", content: note });
+    inferenceHistory.push({ role: "assistant", content: note });
+    activeTurnState = { active: false, inFlight: "" }; saveCurrent();
+  }
+  const answered = conversations.snapshot(currentId).answeredQuestion;
+  if (!readOnlySession && answered && !incorporatedIds.includes(answered.id)) {
+    const words = answered.answers.map(row => redactSecrets(row.answer)).join("\n");
+    history.push({ role: "user", content: words });
+    inferenceHistory.push({ role: "user", content: words });
+    incorporatedIds.push(answered.id);
+    saveCurrent();
+  }
   send({ type: "goal", text: currentGoal, archive: currentArchive.slice(-6) });
+}
+
+function saveCurrent() {
+  if (!currentId || readOnlySession) return;
+  const extra = { modelMessages: inferenceHistory, inputIds: incorporatedIds, turnState: activeTurnState };
+  if (currentBot) persistSession(currentId, history, { ...extra, title: currentBot.name });
+  else saveSession(currentId, history, extra);
 }
 
 function persistTurn(userText, rows = [], modelMessages = null) {
@@ -326,8 +396,8 @@ function persistTurn(userText, rows = [], modelMessages = null) {
     }
   }
   if (!currentId) return;
-  if (currentBot) persistSession(currentId, history, { title: currentBot.name, modelMessages: inferenceHistory });
-  else saveSession(currentId, history, { modelMessages: inferenceHistory });
+  if (currentBot) persistSession(currentId, history, { title: currentBot.name, modelMessages: inferenceHistory, inputIds: incorporatedIds });
+  else saveSession(currentId, history, { modelMessages: inferenceHistory, inputIds: incorporatedIds });
 }
 
 function sleep(ms) {
@@ -351,16 +421,20 @@ setDeskGuard(async (fn) => {
   }
 });
 
-app.setName("Nova Collar");
+app.setName(APP_NAME);
 // Window storage (tips, theme, pack) stays in the package-named folder, not the display name's.
-app.setPath("userData", join(app.getPath("appData"), "novapup"));
+// A source preview gets its own browser storage alongside its explicit profile.
+// Normal public installations retain their existing storage location.
+app.setPath("userData", process.env.NOVAPUP_HOME && !app.isPackaged
+  ? join(APP_HOME, "electron")
+  : join(app.getPath("appData"), "novapup"));
 app.commandLine.appendSwitch("touch-events", "enabled");
 
 function startAutoUpdate() {
   // Packaged builds look at the configured GitHub releases for a newer version,
   // download it, and notify; electron-updater installs it on the next quit.
   // No-op in dev, and any failure (offline, private repo) is swallowed.
-  if (!app.isPackaged) return;
+  if (!app.isPackaged || BUILD_CHANNEL !== "public") return;
   try {
     const { autoUpdater } = createRequire(import.meta.url)("electron-updater");
     autoUpdater.autoDownload = true;
@@ -375,7 +449,9 @@ app.whenReady().then(async () => {
   const { session } = bootSessions();
   useSession(session);
   onWorkdir((path) => send({ type: "cwd", path }));
-  localServers = (await scanLocalModels()).found;
+  setupReport = await scanLocalModels({cfg:loadConfig()});
+  localServers = setupReport.found;
+  setupReport.decision = bootstrapConnection(setupReport);
   createWindow();
   void refreshCatalog(loadConfig()).then(() => send({ type: "models", state: snapshot() }));
   startPty();
@@ -397,20 +473,39 @@ app.whenReady().then(async () => {
   });
 });
 
-let analysisQuitReady = false;
+let quitReady = false;
+let quitCleanup = null;
 app.on("before-quit", event => {
+  if (event.defaultPrevented) return;
   cancelApprovals();
   stopBoard();
   stopLaya();
   turnAbort?.abort();
-  if (!analysisQuitReady && (analysisManager.sessions.size || networkRuntime.client || networkRuntime.connecting)) {
+  boardAbort?.abort();
+  if (!quitReady) {
     event.preventDefault();
-    Promise.allSettled([analysisManager.closeAll(), networkRuntime.close()]).finally(() => { analysisQuitReady = true; app.quit(); });
+    if (!quitCleanup) {
+      const pending = [closeTerminal()];
+      if (analysisManager.sessions.size) pending.push(analysisManager.closeAll());
+      if (networkRuntime.client || networkRuntime.connecting) pending.push(networkRuntime.close());
+      quitCleanup = Promise.allSettled(pending).finally(()=>{
+        quitReady=true;
+        // Leave the native PTY exit callback before Electron joins its reaper.
+        setImmediate(()=>app.quit());
+      });
+    }
   }
 });
 app.on("window-all-closed", () => app.quit());
 
 ipcMain.handle("state", (event) => (fromWindow(event) ? snapshot() : {}));
+ipcMain.handle("context:info", (event, body = {}) => {
+  if (!fromWindow(event)) return { ok: false, error: "denied" };
+  try {
+    const view = contextView(body);
+    return { ok: true, snapshot: view === "last" ? lastContextSnapshot(currentId) : previewContextInfo(modelHistory(), { sessionId: currentId }) };
+  } catch (error) { return { ok: false, error: error.message }; }
+});
 ipcMain.handle("approval:resolve", (event, body) => fromWindow(event) && resolveApproval(body?.id, body?.allowed === true));
 
 ipcMain.handle("analysis:pick", async event => {
@@ -440,10 +535,20 @@ ipcMain.handle("analysis:licenses", async event => {
   return { ok: !error, error };
 });
 
-ipcMain.handle("setup:scan", async (event) => {
+ipcMain.handle("setup:scan", async (event, options = {}) => {
   if (!fromWindow(event)) return { found: [] };
-  const report = await scanLocalModels();
+  const cfg = loadConfig();
+  const localUrl = options?.url ? normalizeLocalUrl(options.url) : "";
+  if (options?.url && !localUrl) return {found:[],memory:setupReport?.memory,error:"Use an HTTP server on 127.0.0.1, localhost or ::1."};
+  const report = await scanLocalModels(localUrl ? {
+    cfg:{...cfg,localUrl,localUrlExplicit:true,localKey:options.apiKey === undefined ? (localUrl === cfg.localUrl ? cfg.localKey : "") : String(options.apiKey || "").trim()},
+    probes:[],environment:{},
+  } : {cfg});
   localServers = report.found;
+  if (!localUrl && !cfg.hasExplicitConnection) {
+    report.decision = bootstrapConnection(report);
+    if (report.decision.mode === "auto") report.state = publicState();
+  }
   return report;
 });
 
@@ -458,14 +563,17 @@ ipcMain.handle("setup:install", async (event) => {
 
 ipcMain.handle("setup:use", (event, pick) => {
   if (!fromWindow(event)) return { ok: false };
-  const url = String(pick?.url || "");
+  const url = normalizeLocalUrl(pick?.url);
   const model = String(pick?.model || "");
-  if (!url.startsWith("http://127.0.0.1:") && !url.startsWith("http://localhost:")) {
+  if (!url) {
     return { ok: false, error: "Only a server on this system can be saved." };
   }
-  saveLocalModel({ url, model });
-  markSetupDone();
-  return { ok: true, state: snapshot() };
+  try {
+    const saved = saveLocalModel({ url, model, apiKey:pick?.apiKey === undefined ? undefined : String(pick.apiKey || "").trim() });
+    if (saved.urlRejected) return {ok:false,error:saved.urlRejected};
+    markSetupDone();
+    return { ok: true, state: snapshot() };
+  } catch {return {ok:false,error:"Nova Collar could not save its connection. Check that its local profile is writable, then try again."};}
 });
 
 ipcMain.handle("setup:skip", (event) => {
@@ -486,7 +594,7 @@ ipcMain.handle("models:scan", async (event, options) => {
   if (!fromWindow(event)) return {};
   const cfg = loadConfig();
   await Promise.all([
-    scanLocalModels().then(report => { localServers = report.found; }),
+    scanLocalModels({cfg}).then(report => { localServers = report.found; }),
     refreshCatalog(cfg, { force: options?.force !== false }),
   ]);
   return snapshot();
@@ -494,12 +602,7 @@ ipcMain.handle("models:scan", async (event, options) => {
 
 ipcMain.handle("models:hosted-pair", (event) => {
   if (!fromWindow(event)) return {};
-  const cfg = loadConfig();
-  if (new URL(cfg.chatUrl || "https://invalid.local").hostname !== "ai.hungrynova.com") return snapshot();
-  saveKeys({ model: "nova-pup:27b" });
-  saveLane({ lane: "fast", model: "nova-pup:4b" });
-  saveLane({ lane: "think", model: "nova-pup:27b" });
-  return snapshot();
+  throw new Error("The retired model pair is unavailable. Choose fast and thinking models explicitly from the current catalog.");
 });
 
 ipcMain.handle("model", (event, id) => {
@@ -515,14 +618,39 @@ ipcMain.handle("model:lane", (event, body) => {
 });
 
 ipcMain.handle("sessions:list", (event) => (fromWindow(event) ? listSessions() : { current: null, chats: [] }));
+ipcMain.handle("recovery:list", event => {
+  if (!fromWindow(event) || currentBot) return { ok: false, points: [] };
+  try { return { ok: true, points: recoveryPointSummaries(currentId) }; }
+  catch (error) { return { ok: false, error: redactSecrets(error.message), points: [] }; }
+});
+ipcMain.handle("recovery:restore", (event, id) => {
+  if (!fromWindow(event) || currentBot) return { ok: false, error: "Recovery belongs to the current owner chat." };
+  if (turnAbort || boardBusy || specAbort || readOnlySession) return { ok: false, error: "Stop active work before recovery." };
+  try {
+    const result = recoverSession(currentId, id, { coordinator: conversations, hasActiveWriters: () => Boolean(turnAbort || boardBusy || specAbort) });
+    setWorkdir(result.cwd); useSession(result.session);
+    return { ...snapshot(), ok: true, recovery: { restored: result.restored, operationId: result.operationId, verification: result.verification, externalActionsReplayed: false } };
+  } catch (error) { return { ok: false, error: redactSecrets(error.message) }; }
+});
+ipcMain.handle("recovery:operations", event => {
+  if (!fromWindow(event) || currentBot) return { ok: false, operations: [] };
+  try { return { ok: true, operations: recoveryOperations().filter(row => row.sessionId === currentId || row.branchSessionId === currentId || row.cwd === getWorkdir()) }; }
+  catch (error) { return { ok: false, error: redactSecrets(error.message), operations: [] }; }
+});
+ipcMain.handle("recovery:acknowledge", (event, body) => {
+  if (!fromWindow(event) || currentBot || turnAbort || boardBusy || specAbort || readOnlySession) return { ok: false, error: "Stop active owner work before acknowledging recovery inspection." };
+  try { return acknowledgeRecoveryOperation(body?.id, body?.note, { coordinator: conversations, hasActiveWriters: () => Boolean(turnAbort || boardBusy || specAbort) }); }
+  catch (error) { return { ok: false, error: redactSecrets(error.message) }; }
+});
 
 function parkCurrent() {
-  if (!currentId) return;
-  if (currentBot) persistSession(currentId, history, { title: currentBot.name, modelMessages: inferenceHistory });
-  else saveSession(currentId, history, { modelMessages: inferenceHistory });
+  if (!currentId || readOnlySession) return;
+  if (currentBot) persistSession(currentId, history, { title: currentBot.name, modelMessages: inferenceHistory, inputIds: incorporatedIds });
+  else saveSession(currentId, history, { modelMessages: inferenceHistory, inputIds: incorporatedIds });
 }
 
 ipcMain.handle("sessions:new", (event) => {
+  if (turnAbort) return { ok: false, error: "Stop the current turn before changing chats or folders." };
   if (!fromWindow(event)) return {};
   parkCurrent();
   currentBot = null;
@@ -531,6 +659,7 @@ ipcMain.handle("sessions:new", (event) => {
 });
 
 ipcMain.handle("workdir:set", (event, path) => {
+  if (turnAbort) return { ok: false, error: "Stop the current turn before changing chats or folders." };
   if (!fromWindow(event)) return { ok: false };
   return applyWorkdir(String(path || ""), { create: true });
 });
@@ -543,10 +672,12 @@ ipcMain.handle("workdir:pick", async (event) => {
     properties: ["openDirectory", "createDirectory"],
   });
   if (picked.canceled || !picked.filePaths[0]) return { ok: false, cancelled: true, path: getWorkdir() };
+  if (turnAbort) return { ok: false, error: "Stop the current turn before changing folders." };
   return applyWorkdir(picked.filePaths[0]);
 });
 
 ipcMain.handle("sessions:open", (event, id) => {
+  if (turnAbort) return { ok: false, error: "Stop the current turn before changing chats or folders." };
   if (!fromWindow(event)) return {};
   if (!isChatId(id) || id === currentId) return snapshot();
   parkCurrent();
@@ -576,10 +707,14 @@ ipcMain.handle("spec:complete", async (event, body) => {
   }
 });
 
-ipcMain.handle("clipboard:write", (event, text) => {
+ipcMain.handle("clipboard:write", async (event, text) => {
   if (!fromWindow(event)) return { ok: false };
-  clipboard.writeText(String(text || "").slice(0, 100000));
-  return { ok: true };
+  try {
+    await clipboard.writeText(String(text || "").slice(0, 100000));
+    return { ok: true };
+  } catch {
+    return { ok: false, error: "Could not copy text." };
+  }
 });
 
 ipcMain.handle("voice:make", async (event, wish) => {
@@ -622,6 +757,7 @@ ipcMain.handle("tasks:save", (event, input) => {
 });
 
 ipcMain.handle("bots:open", (event, id) => {
+  if (turnAbort) return { ok: false, error: "Stop the current turn before changing chats or folders." };
   if (!fromWindow(event)) return {};
   if (!isBotId(id)) return snapshot();
   if (currentBot?.id === id && currentId === id) return snapshot();
@@ -660,14 +796,16 @@ ipcMain.handle("open-settings", (event) => {
 });
 
 ipcMain.on("term-write", (event, data) => {
-  if (!fromWindow(event)) return;
-  term?.write(String(data || "").slice(0, 16_384));
+  if (!fromWindow(event) || quitCleanup || !term) return;
+  try {term.write(String(data || "").slice(0, 16_384));} catch { /* The owned terminal may close before queued input. */ }
 });
 ipcMain.on("term-resize", (event, size) => {
-  if (!fromWindow(event)) return;
+  if (!fromWindow(event) || quitCleanup || !term) return;
   const cols = Number(size?.cols);
   const rows = Number(size?.rows);
-  if (term && cols > 0 && rows > 0 && cols < 400 && rows < 200) term.resize(cols, rows);
+  if (Number.isInteger(cols) && Number.isInteger(rows) && cols > 0 && rows > 0 && cols < 400 && rows < 200) {
+    try {term.resize(cols, rows);} catch { /* A queued resize cannot reopen a closed terminal. */ }
+  }
 });
 ipcMain.on("window-min", (event) => {
   if (fromWindow(event)) win?.minimize();
@@ -700,13 +838,50 @@ function reportWatchdog(killed) {
 
 ipcMain.handle("stop", (event) => {
   if (!fromWindow(event)) return { ok: false };
+  if (conversationToken) conversations.pause(conversationToken, "stopped");
   turnAbort?.abort();
+  boardAbort?.abort();
   return { ok: true };
 });
 
-ipcMain.handle("chat", async (event, payload) => {
+ipcMain.handle("question:answer", (event, body) => {
+  if (!fromWindow(event) || !currentId) return { ok: false, error: "denied" };
+  try { return conversations.answer(currentId, body?.requestId, body?.answers); }
+  catch (error) { return { ok: false, error: error.message }; }
+});
+ipcMain.handle("input:resume", (event) => {
+  if (!fromWindow(event)) return { ok: false, error: "denied" };
+  return chatFromWindow(event, { text: "Continue the saved work using the evidence already recorded. Inspect any action with an unknown outcome before retrying it.", resume: true });
+});
+
+ipcMain.handle("chat", chatFromWindow);
+async function chatFromWindow(event, payload) {
   if (!fromWindow(event)) return { ok: false, error: "denied" };
   const text = (typeof payload === "string" ? payload : String(payload?.text || "")).slice(0, 24_000);
+  if (!text.trim()) return { ok: false, error: "Write a message first." };
+  if (boardBusy) return { ok: false, error: "A scheduled task is working. Stop it before starting another lead turn." };
+  if (turnAbort) {
+    try {
+      const queued = conversations.enqueue(currentId, redactSecrets(text));
+      send({ type: "user_input", id: queued.id, text: queued.content });
+      return { ok: true, queued: true, id: queued.id };
+    } catch (error) { return { ok: false, error: error.message }; }
+  }
+  // Acquire the profile lead before goal commands, approval releases, or any
+  // other chat mutation. A foreign CLI lead may be viewed but never rewritten.
+  try { conversationToken = conversations.start(currentId, { resume: true }); }
+  catch (error) { return { ok: false, error: error.message }; }
+  try {
+    const latest = readSession(currentId);
+    if (latest) useSession(latest, { reconcile: false });
+    return await runWindowLead(event, payload, text);
+  } finally {
+    if (conversationToken) { conversations.finish(conversationToken, { reason: "unfinished" }); conversationToken = null; }
+    turnAbort = null;
+  }
+}
+
+async function runWindowLead(event, payload, text) {
   const pack = safePack(typeof payload === "object" && payload ? payload.pack : "");
   const cfg = loadConfig();
   if (platform() === "darwin" && !existsSync(BIN)) {
@@ -735,60 +910,103 @@ ipcMain.handle("chat", async (event, payload) => {
     send({ type: "mood", mood: "idle", text: "here" });
     return { ok: true };
   }
-  if (!isLocalModel(cfg.model) && !cfg.chatKey && !cfg.toolsKey) {
+  if (isLocalModel(cfg.model) && !publicState(cfg).ready) return {ok:false,error:"need-model"};
+  if (!isLocalModel(cfg.model) && !publicState(cfg).ready) {
     return { ok: false, error: "need-keys" };
   }
   const runText = goalCmd.runText || text;
+  const priorMessages = modelHistory();
+  const baseRows = history.slice();
+  const userRows = [{ role: "user", content: redactSecrets(text), id: randomUUID(), createdAt: new Date().toISOString() }];
+  const evidenceRows = [];
+  let progressMessages = [...priorMessages, { role: "user", content: redactSecrets(runText) }];
+  let finalText = "";
+  let finishReason = "unfinished";
+  const checkpoint = (messages = progressMessages, inFlight = null) => {
+    progressMessages = messages;
+    activeTurnState = { active: true, inFlight: inFlight?.name || "" };
+    const wire = [...messages];
+    if (inFlight) wire.push({ role: "tool", tool_call_id: inFlight.id,
+      content: `Interrupted action ${inFlight.name}: outcome unknown. It may already have changed external state. Inspect the result before retrying. Do not replay automatically.` });
+    inferenceHistory = cleanModelHistory(wire);
+    history.length = 0;
+    history.push(...baseRows, ...userRows, ...evidenceRows, ...(finalText ? [{ role: "assistant", content: finalText }] : []));
+    if (finalText) activeTurnState = { active: false, inFlight: "" };
+    saveCurrent();
+  };
   turnAbort = new AbortController();
   beginTurn({ termPid: term?.pid, signal: turnAbort.signal, workdir: getWorkdir() });
+  const tape = createTimeline();
   try {
-    const tape = createTimeline();
-    const result = await runTurn(modelHistory(), runText, (payload) => {
+    checkpoint();
+    const result = await runTurn(priorMessages, runText, (payload) => {
       if (payload?.type === "retract") tape.retract();
       if (payload?.type === "delta") tape.delta(payload.text);
-      if (payload?.type === "tool_result") tape.step(payload);
+      if (payload?.type === "tool_result") {
+        tape.step(payload);
+        evidenceRows.push({ role: "step", name: payload.name, pack: payload.pack || "", ok: payload.ok !== false,
+          blurb: payload.blurb || "", detail: payload.detail || "", ...(payload.verification ? { verification: structuredClone(payload.verification) } : {}), ...(payload.contextSelection ? { contextSelection: structuredClone(payload.contextSelection) } : {}) });
+      }
       send(payload);
-    }, turnAbort.signal, { pack: pack || currentBot?.pack || "", bot: currentBot, goal: currentGoal });
+    }, turnAbort.signal, {
+      sourceMessages: () => history, originalRequestId: userRows[0].id,
+      sessionId: currentId, pack: pack || currentBot?.pack || "", bot: currentBot, goal: currentGoal,
+      onProgress: checkpoint,
+      takeInput: () => {
+        const batch = conversations.peek(conversationToken);
+        if (!batch) return null;
+        const messages = [];
+        for (const row of batch.messages) {
+          if (incorporatedIds.includes(row.id)) continue;
+          userRows.push({ role: "user", content: row.content, id: row.id, createdAt: new Date(row.created).toISOString() });
+          incorporatedIds.push(row.id);
+          messages.push(row);
+        }
+        if (!messages.length) { conversations.ack(conversationToken, batch.receipt); return null; }
+        return { ...batch, messages };
+      },
+      ackInput: batch => conversations.ack(conversationToken, batch.receipt),
+      askUser: async args => {
+        const answer = await conversations.ask(conversationToken, args, { signal: turnAbort.signal });
+        const words = answer.answers.map(row => redactSecrets(row.answer)).join("\n");
+        userRows.push({ role: "user", content: words, id: answer.requestId, createdAt: new Date().toISOString() });
+        incorporatedIds.push(answer.requestId);
+        checkpoint([...progressMessages, { role: "user", content: words }]);
+        send({ type: "user_input", id: answer.requestId, text: words });
+        return answer;
+      },
+    });
     const leftovers = reportWatchdog(endTurn());
-    if (leftovers.length) {
-      tape.step({
-        name: "watchdog",
-        ok: false,
-        blurb: "Caught a runaway",
-        detail: leftovers.map((row) => row.why).join("\n"),
-      });
-    }
-    for (const entry of result.archive || []) {
-      if (currentId) currentArchive = pushArchive(currentId, entry);
-      else currentArchive = [...currentArchive, entry].slice(-24);
-    }
+    if (leftovers.length) evidenceRows.push({ role: "step", name: "watchdog", ok: false, blurb: "Caught a runaway", detail: leftovers.map(row => row.why).join("\n") });
+    for (const entry of result.archive || []) currentArchive = pushArchive(currentId, entry);
     if (result.goalStatus === "done" && currentGoal && currentId) {
-      currentGoal = writeGoal(currentId, "");
-      send({ type: "goal", text: "", archive: currentArchive.slice(-6) });
+      currentGoal = writeGoal(currentId, ""); send({ type: "goal", text: "", archive: currentArchive.slice(-6) });
     }
-    persistTurn(text, tape.finish(result.assistant), result.messages?.length ? result.messages : null);
-    send({ type: "done", text: result.assistant });
-    teachAfter(runText);
-    senseAfter(history);
-    return { ok: true };
+    finalText = result.assistant || "No reply.";
+    const completedWire = [...(result.messages || progressMessages)];
+    if (completedWire.at(-1)?.role !== "assistant" || completedWire.at(-1)?.content !== finalText) completedWire.push({ role: "assistant", content: finalText });
+    checkpoint(completedWire);
+    finishReason = result.held ? "held" : "finished";
+    // finish pauses late arrivals instead of starting an unsolicited extra turn.
+    conversations.finish(conversationToken, { reason: finishReason }); conversationToken = null;
+    send({ type: "done", text: finalText });
+    teachAfter(runText); senseAfter(history);
+    return { ok: true, held: result.held };
   } catch (error) {
     const leftovers = reportWatchdog(endTurn());
-    const timedOut = error.name === "TimeoutError" || /timeout/i.test(error.message || "");
-    const stopped = !timedOut && (error.name === "AbortError" || /stopped/i.test(error.message || ""));
-    const reply = timedOut
-      ? "That turn timed out. Say go and I’ll pick up from the last tool."
-      : stopped
-        ? "Stopped."
-        : redactSecrets(error.message || "That failed.");
-    persistTurn(text, [
-      ...leftovers.length ? [{ role: "step", name: "watchdog", ok: false, blurb: "Caught a runaway", detail: leftovers.map((row) => row.why).join("\n") }] : [],
-      { role: "assistant", content: reply },
-    ]);
-    send({ type: stopped ? "done" : "error", text: reply });
-    senseAfter(history);
+    const stopped = turnAbort.signal.aborted || error.name === "AbortError";
+    finishReason = stopped ? "stopped" : "error";
+    finalText = stopped ? "Stopped. Saved input is paused. Continue when you are ready." : redactSecrets(error.message || "That failed.");
+    evidenceRows.push(...leftovers.map(row => ({ role: "step", name: "watchdog", ok: false, blurb: "Caught a runaway", detail: row.why })));
+    // Keep the last persisted uncertain action receipt; do not replace it with a raw partial batch.
+    const savedWire = inferenceHistory;
+    checkpoint([...savedWire, { role: "assistant", content: finalText }]);
+    if (conversationToken) { conversations.finish(conversationToken, { reason: finishReason }); conversationToken = null; }
+    send({ type: stopped ? "done" : "error", text: finalText });
     send({ type: "mood", mood: "idle", text: "here" });
-    return { ok: !stopped, error: stopped ? undefined : error.message, stopped };
+    return { ok: false, error: stopped ? undefined : error.message, stopped };
   } finally {
+    if (conversationToken) { conversations.finish(conversationToken, { reason: finishReason }); conversationToken = null; }
     turnAbort = null;
   }
-});
+}

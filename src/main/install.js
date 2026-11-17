@@ -3,9 +3,9 @@
 import { existsSync, lstatSync, mkdirSync, readlinkSync, symlinkSync } from "node:fs";
 import { homedir, platform } from "node:os";
 import { join } from "node:path";
-import { ROOT, saveKeys, saveLocalModel, markSetupDone } from "./config.js";
+import { ROOT, loadConfig, publicState, saveKeys, saveLocalModel, markSetupDone } from "./config.js";
 import { allowServiceUrl } from "./safe.js";
-import { ensureOllama, memoryPlan, scanLocalModels } from "./setup.js";
+import { ensureOllama, memoryPlan, scanLocalModels, localChatCandidates } from "./setup.js";
 
 export function layaDir() {
   return process.env.NP_LAYA_MODEL || join(ROOT, "models", "laya-np");
@@ -16,14 +16,38 @@ export function layaReady() {
 }
 
 export async function inspectInstall() {
-  const scanned = await scanLocalModels();
+  const scanned = await scanLocalModels({cfg:loadConfig()});
   const memory = scanned.memory || memoryPlan();
   return {
     memory,
     found: scanned.found || [],
+    explicitEndpointRejected: Boolean(scanned.explicitEndpointRejected),
     laya: { ready: layaReady(), path: layaDir(), diskGb: memory.layaDiskGb, ramGb: memory.layaRamGb },
     localFit: memory.model,
   };
+}
+
+export function bootstrapConnection(report) {
+  const cfg = loadConfig();
+  if (cfg.hasExplicitConnection) {
+    const ready = publicState(cfg).ready;
+    return {mode:"saved",ready,connectionPreserved:true};
+  }
+  const candidates = localChatCandidates(report);
+  const preferred = candidates.filter(row=>row.preferred);
+  const pool = report?.hasPreferredEndpoint || preferred.length ? preferred : candidates;
+  const loaded = pool.filter(row=>row.loaded);
+  const selected = !report?.explicitEndpointRejected && (loaded.length === 1 ? loaded[0] : pool.length === 1 ? pool[0] : null);
+  if (selected) {
+    try {
+      const saved = saveLocalModel({url:selected.url,model:selected.model});
+      if (!saved.urlRejected) {
+        markSetupDone();
+        return {mode:"auto",ready:true,selected};
+      }
+    } catch {return {mode:"choose",ready:false,candidates,error:"Nova Collar could not save its connection. Check that its local profile is writable, then try again."};}
+  }
+  return {mode:candidates.length ? "choose" : "none",ready:false,candidates};
 }
 
 export function choiceList(info) {
@@ -44,7 +68,7 @@ export function parseChoice(text, info) {
   const raw = String(text || "").trim().toLowerCase();
   const picked = raw || "1";
   if (picked === "1" || picked === "byo" || picked === "own") {
-    if (info.found?.length) return { source: "found" };
+    if (info.found?.some(row=>row.models?.length)) return { source: "found" };
     return { source: "endpoint" };
   }
   if (picked === "2" || picked === "download" || picked === "pull") {
@@ -65,8 +89,9 @@ export function applyEndpoint({ url, model, chatKey } = {}) {
   } catch {
     return { ok: false, error: "That address is not a URL." };
   }
-  if (host === "127.0.0.1" || host === "localhost") {
-    const cfg = saveLocalModel({ url: chatUrl, model: id });
+  if (allowServiceUrl(chatUrl, "local")) {
+    const cfg = saveLocalModel({ url: chatUrl, model: id, apiKey:chatKey });
+    if (cfg.urlRejected) return {ok:false,error:cfg.urlRejected};
     markSetupDone();
     return { ok: true, model: cfg.localModel, localModel: cfg.localModel, url: cfg.localUrl };
   }
@@ -86,12 +111,11 @@ export function applyFound(hit, modelName) {
   if (!hit || !model) return { ok: false, error: "Pick a model from the list." };
   if (allowServiceUrl(hit.url, "local")) {
     const cfg = saveLocalModel({ url: hit.url, model });
+    if (cfg.urlRejected) return {ok:false,error:cfg.urlRejected};
     markSetupDone();
     return { ok: true, model: cfg.model, localModel: cfg.localModel, url: cfg.localUrl };
   }
-  const cfg = saveKeys({ model, chatUrl: hit.url });
-  markSetupDone();
-  return { ok: true, model: cfg.model, chatUrl: cfg.chatUrl, keySaved: Boolean(cfg.chatKey) };
+  return {ok:false,error:"Choose a model server on this computer, or connect another provider manually."};
 }
 
 export async function applyPull(onLine) {
@@ -119,6 +143,6 @@ export function linkNp() {
   const destDir = join(homedir(), ".local", "bin");
   mkdirSync(destDir, { recursive: true });
   const pub = linkOne(destDir, "nova-collar", target);
-  linkOne(destDir, "np", target);
+  // np belongs to the personal dev track. Public installs never replace it.
   return { ok: true, path: pub.path, linked: pub.linked, note: pub.linked ? "" : "nova-collar is already on your PATH. Left it in place." };
 }

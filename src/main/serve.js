@@ -2,7 +2,10 @@ import { analysisAsk, workingProjectAsk } from "./analysis-pack.js";
 import { networkAsk } from './network-pack.js';
 import { factAsk, folderAsk } from "./ground.js";
 
-/** Gate before a tool runs. A specific question only gets the tool that answers it. */
+/** Relevance hints for initial schema disclosure, never execution authority.
+ * Keyword matches can come from quotes or constraints. A permitted, disclosed
+ * call is checked by the real authorization/approval boundary at execution.
+ */
 
 const FOLDER_TOOLS = new Set(["host_file_read"]);
 

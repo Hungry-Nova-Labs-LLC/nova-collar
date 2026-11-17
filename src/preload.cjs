@@ -2,6 +2,7 @@ const { contextBridge, ipcRenderer } = require("electron");
 
 contextBridge.exposeInMainWorld("pup", {
   state: () => ipcRenderer.invoke("state"),
+  contextInfo: (view = "last") => ipcRenderer.invoke("context:info", { view }),
   pickAnalysisTarget: () => ipcRenderer.invoke("analysis:pick"),
   analysisLicenses: () => ipcRenderer.invoke("analysis:licenses"),
   pickNetworkCapture: () => ipcRenderer.invoke('network:pick'),
@@ -12,7 +13,13 @@ contextBridge.exposeInMainWorld("pup", {
   openSettings: () => ipcRenderer.invoke("open-settings"),
   chat: (text, pack) => ipcRenderer.invoke("chat", { text, pack: pack || "" }),
   stop: () => ipcRenderer.invoke("stop"),
+  resumeInput: () => ipcRenderer.invoke("input:resume"),
+  answerQuestion: (requestId, answers) => ipcRenderer.invoke("question:answer", { requestId, answers }),
   sessions: () => ipcRenderer.invoke("sessions:list"),
+  recoveryPoints: () => ipcRenderer.invoke("recovery:list"),
+  recoverPoint: (id) => ipcRenderer.invoke("recovery:restore", id),
+  recoveryOperations: () => ipcRenderer.invoke("recovery:operations"),
+  acknowledgeRecovery: (id, note) => ipcRenderer.invoke("recovery:acknowledge", { id, note }),
   newChat: () => ipcRenderer.invoke("sessions:new"),
   openChat: (id) => ipcRenderer.invoke("sessions:open", id),
   on: (fn) => {
@@ -40,7 +47,7 @@ contextBridge.exposeInMainWorld("pup", {
   readVoice: () => ipcRenderer.invoke("voice:read"),
   makeVoices: (wish) => ipcRenderer.invoke("voice:make", wish),
   setVoice: (text) => ipcRenderer.invoke("voice:set", text),
-  setupScan: () => ipcRenderer.invoke("setup:scan"),
+  setupScan: (options) => ipcRenderer.invoke("setup:scan", options),
   setupInstall: () => ipcRenderer.invoke("setup:install"),
   setupUse: (pick) => ipcRenderer.invoke("setup:use", pick),
   setupSkip: () => ipcRenderer.invoke("setup:skip"),

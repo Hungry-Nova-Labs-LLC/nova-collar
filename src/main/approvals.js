@@ -5,6 +5,7 @@ import { APP_HOME } from "./config.js";
 import { redactSecrets } from "./safe.js";
 import { expandPath, getWorkdir } from "./workdir.js";
 import { NETWORK_EFFECTS, NETWORK_PRIVACY, validateNetworkArgs } from './network-tools.js';
+import { planFileEdit } from "./file-edit.js";
 
 let notify = null;
 const pending = new Map();
@@ -55,7 +56,13 @@ export function commandNeedsApproval(command) {
   const text = String(command || "").trim();
   // Shell syntax, expansion, redirection and interpreters are not proven read-only.
   if (!text || /[\r\n;&|><`$(){}]/.test(text)) return true;
-  if (/^(?:pwd|Get-Location|hostname|whoami)(?:\s|$)/i.test(text)) return false;
+  if (/^(?:pwd|Get-Location|whoami)(?:\s|$)/i.test(text)) return false;
+  if (/^hostname(?:\s|$)/i.test(text)) {
+    const args = text.replace(/^hostname\b/i, "").trim();
+    // A positional argument sets the hostname when privileged; -F/--file can
+    // do the same on other platforms. Only documented read-only forms bypass.
+    return !/^(?:-[fsd](?:\s+|$))*$/.test(args);
+  }
   if (/^git\s+(?:status|diff|log|show|ls-files)(?:\s|$)/i.test(text) && !/(?:--output|--ext-diff|--textconv|--exec|\s-o\b)/i.test(text)) return false;
   if (/^node\s+--check\s+(?:'[^']+'|"[^"]+"|[^\s'"-][^\s'"]*)$/i.test(text)) return false;
   if (/^(?:Get-Content|Get-ChildItem|Get-Item|Get-Process|Get-Service|Get-CimInstance)\b/i.test(text) && !/-ComputerName|-CimSession/i.test(text)) return false;
@@ -86,11 +93,13 @@ export function assessAction(name, args = {}, ctx = {}) {
       fingerprint: hash(JSON.stringify([name, args, getWorkdir()])),
     };
   }
-  if (["host_file_write", "write_file", "computer_write", "set_rules", "set_personality"].includes(name)) {
+  if (["host_file_edit", "host_file_write", "write_file", "computer_write", "set_rules", "set_personality"].includes(name)) {
+    const edit = name === "host_file_edit" ? planFileEdit(args.path, args.edits) : null;
+    if (edit && (!edit.ok || !edit.changed)) return null;
     const remote = name === "computer_write";
     const path = name === "set_rules" || name === "set_personality"
       ? join(APP_HOME, name === "set_rules" ? "rules.md" : "personality.md") : expandPath(String(args.path || ""));
-    const content = String(args.content ?? "");
+    const content = edit ? edit.content : String(args.content ?? "");
     let old = "";
     let exists = false;
     try { exists = !remote && statSync(path).isFile(); if (exists) old = readFileSync(path, "utf8"); } catch {}

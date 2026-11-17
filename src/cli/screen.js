@@ -321,4 +321,3 @@ export function createScreen({ plain = false } = {}) {
     },
   };
 }
-

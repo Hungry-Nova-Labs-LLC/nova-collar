@@ -266,6 +266,7 @@ async function askMaster(transcript, prior, metrics) {
   const winners = texts(prior.next, 4, 1);
   const response = await fetch(`${cfg.chatUrl}/chat/completions`, {
     method: "POST",
+    redirect: "error",
     headers: {
       authorization: `Bearer ${cfg.chatKey}`,
       "content-type": "application/json",

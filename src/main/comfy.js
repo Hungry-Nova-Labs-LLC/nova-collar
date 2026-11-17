@@ -47,6 +47,7 @@ async function readJson(response) {
 async function comfyFetch(base, path, cfg, init = {}) {
   return fetch(`${base}${path}`, {
     ...init,
+    redirect: "error",
     headers: { ...headers(cfg), ...(init.headers || {}) },
     signal: init.signal || AbortSignal.timeout(30_000),
   });

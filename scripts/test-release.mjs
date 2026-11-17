@@ -5,6 +5,8 @@ import { join } from "node:path";
 import { createHash, randomBytes } from "node:crypto";
 import { gunzipSync } from "node:zlib";
 import { createRequire } from "node:module";
+import { execFileSync } from "node:child_process";
+import { buildMacControl } from "./build-mac-control.js";
 const require = createRequire(import.meta.url);
 const yaml = require("js-yaml");
 const { finalizeMacRelease } = require("./finalize-mac-release.cjs");
@@ -39,3 +41,19 @@ try {
   await assert.rejects(finalizeMacRelease(dir), /local ZIP or DMG/);
   console.log("release metadata follows final stapled bytes");
 } finally { await rm(dir, { recursive: true, force: true }); }
+
+if (process.platform === "darwin") {
+  const nativeDir = await mkdtemp(join(tmpdir(), "nova-release-native-test-"));
+  try {
+    // Compile the real helper: checking arguments alone misses host-SDK defaults.
+    assert.equal(buildMacControl({ outDir: nativeDir }), 0);
+    const helper = join(nativeDir, "mac-control");
+    const build = execFileSync("xcrun", ["vtool", "-show-build", helper], { encoding: "utf8", stdio: "pipe" });
+    const pkg = JSON.parse(await readFile(new URL("../package.json", import.meta.url), "utf8"));
+    assert.equal(build.match(/^\s*minos\s+(\S+)/m)?.[1], pkg.build.mac.minimumSystemVersion,
+      "The compiled helper must support the installer's declared minimum macOS version.");
+    const architecture = execFileSync("xcrun", ["lipo", "-archs", helper], { encoding: "utf8", stdio: "pipe" }).trim();
+    assert.equal(architecture, process.arch === "arm64" ? "arm64" : "x86_64");
+    console.log("native Mac helper matches declared minimum OS and architecture");
+  } finally { await rm(nativeDir, { recursive: true, force: true }); }
+}

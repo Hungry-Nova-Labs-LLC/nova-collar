@@ -2,6 +2,7 @@ import { basename } from "node:path";
 import { homedir } from "node:os";
 import { packFor } from "./packs.js";
 import { redactSecrets } from "./safe.js";
+import { commandDiagnostic } from "./command-diagnostic.js";
 
 function parseArgs(raw) {
   if (!raw) return {};
@@ -73,13 +74,17 @@ export function describeTool(name, rawArgs, result = {}) {
     const out = firstLine(result.stdout);
     blurb = ok
       ? (out ? `${short(command, 42)} → ${short(out, 48)}` : `Ran ${short(command, 70)}`)
-      : `Failed: ${short(result.stderr || command, 80)}`;
+      : `Failed: ${short(commandDiagnostic(result, command), 80)}`;
     detail = lines([
       command && `$ ${command}`,
       result.cwd && `cwd ${prettyPath(result.cwd)}`,
       clip(result.stdout),
       result.stderr && clip(result.stderr),
     ]);
+  } else if (name === "host_file_edit") {
+    blurb = ok ? result.unchanged ? `Unchanged ${fileName(path)}` : `Edited ${fileName(path)}` : `Couldn't edit ${fileName(path) || "file"}`;
+    detail = lines([prettyPath(result.path || path), result.text || result.error,
+      result.changed ? `${result.edits} replacement(s); ${result.bytes} bytes` : ""]);
   } else if (name === "write_file" || name === "host_file_write") {
     const bytes = result.bytes != null ? ` (${result.bytes} bytes)` : "";
     blurb = ok ? `Wrote ${fileName(path) || "file"}${bytes}` : `Couldn’t write ${fileName(path) || "file"}`;
@@ -141,7 +146,7 @@ export function describeTool(name, rawArgs, result = {}) {
     blurb = ok
       ? `${args.pack || result.pack || "pack"} agent → ${short(result.summary || (result.used || []).join(", ") || "done", 52)}`
       : `Sub-agent failed: ${short(result.error, 60)}`;
-    detail = lines([result.summary, (result.used || []).join(", "), ...(result.notes || [])]);
+    detail = lines([result.contextSelection ? "Context selection metadata\n" + JSON.stringify(result.contextSelection) : "", result.summary, (result.used || []).join(", "), ...(result.notes || [])]);
   } else if (name.startsWith("computer_")) {
     blurb = ok ? `Remote desk: ${name.replace("computer_", "").replaceAll("_", " ")}` : "Remote desk failed";
     detail = clip(JSON.stringify({ action: args.action, ...result, image: undefined, dataUrl: undefined }, null, 2));
@@ -170,5 +175,6 @@ export function describeTool(name, rawArgs, result = {}) {
     ok,
     blurb,
     detail: clip(detail, 6000),
+    ...(name === "subagent" && result.contextSelection ? { contextSelection: structuredClone(result.contextSelection) } : {}),
   };
 }

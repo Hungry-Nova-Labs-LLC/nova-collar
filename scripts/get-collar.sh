@@ -1,9 +1,9 @@
 #!/bin/sh
 # Nova Collar, one step:
-#   curl -fsSL https://raw.githubusercontent.com/Squidspork/nova-collar/main/scripts/get-collar.sh | sh
+#   curl -fsSL https://raw.githubusercontent.com/Hungry-Nova-Labs-LLC/nova-collar/main/scripts/get-collar.sh | sh
 set -eu
 dest="${NOVA_COLLAR_HOME:-$HOME/NovaCollar}"
-repo="https://github.com/Squidspork/nova-collar.git"
+repo="https://github.com/Hungry-Nova-Labs-LLC/nova-collar.git"
 if [ -d "$dest/.git" ]; then
   git -C "$dest" pull --ff-only
 else

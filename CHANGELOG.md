@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.6.0 — Main application update
+
+- Add recovery points, session-history retrieval, context inspection, and verification records. Restoring recorded files opens a new chat and keeps the original history available; it does not reverse external actions.
+- Include project knowledge, source-analysis workers for JavaScript and TypeScript, provider progress, request budgeting, and interrupted-turn recovery.
+- Discover the configured provider's current models, keep the selected model across refreshes, and exclude embedding-only gateway models from chat choices. Retire the fixed 4B/27B routing shortcut; fast and thinking roles remain explicit choices.
+- Discover local Ollama, LM Studio, llama.cpp and OpenAI-compatible services on first launch. Preserve saved connections; connect one unambiguous chat model or offer all available chat models. Support endpoint-scoped local API keys, explicit key clearing, custom loopback ports and retries without automatic model downloads.
+- Isolate malformed or stalled service responses, redact echoed credentials before error parsing, and save settings atomically so failed writes preserve the previous profile. Handle terminal events during shutdown without using a closed native terminal.
+- Retain the main application's existing profile and conversations when replacing a preview installation.
+- Use Hungry Nova Labs LLC release metadata and company repository URLs. Remove personal acknowledgments from the distributed interface and reject cloud-sync conflict copies in release inputs.
+- Require an explicitly pinned signing identity for public Mac releases, including nested native dependencies and installer signing. Company signing is the default; associated-owner signing requires explicit local approval. Keep signing credentials and user profiles outside source and artifacts.
+- Compile the native Mac helper for the declared minimum macOS version and check its deployment target with the real Swift compiler, so a build machine's newer OS does not silently raise the requirement.
+
+Validation and platform coverage are recorded with each release. A source tree's platform support does not establish that an installer for that platform was built or tested.
+
 ## 0.4.0 — Wireshark MCP suite
 
 - Add a local stdio MCP server and Wireshark pack for installed TShark/dumpcap and optional Nmap. No listening service or bundled network tools.

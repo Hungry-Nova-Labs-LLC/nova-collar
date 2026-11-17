@@ -1,4 +1,6 @@
 import { authorizeAction } from "./approvals.js";
+import { commitFileEdit, planFileEdit } from "./file-edit.js";
+import { packToolResult } from "./result-packing.js";
 import { cdCommand } from "./platform.js";
 import { readFileSync, existsSync } from "node:fs";
 import { generateImage } from "./comfy.js";
@@ -219,6 +221,9 @@ async function runTool(name, rawArgs, cfg, ctx = {}) {
     return { ok: false, error: "That is the remote computer. On this computer use host_file_write, host_file_read, or host_run." };
   }
   const args = parseArgs(rawArgs);
+  if (name === "host_file_edit" && ctx.role === "phone") return { ok: false, error: "Local file edits are unavailable on the phone surface." };
+  const editPlan = name === "host_file_edit" ? planFileEdit(args.path, args.edits) : null;
+  if (editPlan && !editPlan.ok) return editPlan;
   if (ctx.bot && (name === "set_rules" || name === "set_personality" || name === "pack_task")) {
     return { ok: false, error: "teammates cannot rewrite Nova Collar or assign the pack" };
   }
@@ -271,9 +276,14 @@ async function runTool(name, rawArgs, cfg, ctx = {}) {
       return { ok: false, held: true, error: holdMessage("overwrite") };
     }
     if (ctx.allow && ctx.taskId && (kind || writes)) saveTask({ id: ctx.taskId, allow: false });
-    return runBash(args.command, args.cwd);
+    return runBash(args.command, args.cwd, { signal: ctx.signal, timeoutMs: Math.min(90000, Math.max(1, Number(args.timeoutMs) || 20000)) });
   }
-  if (name === "read_file" || name === "host_file_read") return readUserFile(args.path);
+  if (name === "read_file" || name === "host_file_read") return readUserFile(args.path, { offset: args.offset, limit: args.limit });
+  if (name === "host_file_edit") {
+    const edited = commitFileEdit(editPlan, { tasker: ctx.tasker, allow: ctx.allow, signal: ctx.signal });
+    if (edited.ok && edited.changed && ctx.allow && ctx.taskId && mutationHold({ tasker: ctx.tasker, allow: false, exists: true, write: true })) saveTask({ id: ctx.taskId, allow: false });
+    return edited;
+  }
   if (name === "write_file" || name === "host_file_write") {
     const wrote = writeUserFile(args.path, args.content, { tasker: ctx.tasker, allow: ctx.allow });
     if (wrote.ok && ctx.allow && ctx.taskId && mutationHold({
@@ -337,16 +347,5 @@ export function toolImage(name, result) {
 }
 
 export function compactResult(result, { max = 24_000 } = {}) {
-  if (!result || typeof result !== "object") return String(result ?? "");
-  const copy = { ...result };
-  if (copy.data && typeof copy.data === "object") {
-    copy.data = { ...copy.data };
-    if (copy.data.image) copy.data.image = `[image ${String(copy.data.image).length} chars]`;
-  }
-  if (copy.image) copy.image = `[image ${String(copy.image).length} chars]`;
-  if (copy.dataUrl) copy.dataUrl = "[image]";
-  if (typeof copy.stdout === "string" && copy.stdout.length > max) copy.stdout = `${copy.stdout.slice(0, max)}…`;
-  if (typeof copy.text === "string" && copy.text.length > max) copy.text = `${copy.text.slice(0, max)}…`;
-  const text = redactSecrets(JSON.stringify(copy));
-  return text.length > max ? `${text.slice(0, max)}…` : text;
+  return packToolResult(result, { max });
 }

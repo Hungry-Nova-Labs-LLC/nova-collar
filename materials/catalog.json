@@ -1,6 +1,6 @@
 {
   "name": "Nova Collar",
-  "repo": "https://github.com/Squidspork/nova-collar",
+  "repo": "https://github.com/Hungry-Nova-Labs-LLC/nova-collar",
   "chat": "Bring your own chat model. Ollama, LM Studio, or any OpenAI-compatible https address. GitHub release files stop at 2 GB, so a local 27B is not in this download.",
   "pieces": [
     {

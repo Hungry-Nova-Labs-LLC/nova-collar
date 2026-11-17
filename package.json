@@ -1,14 +1,13 @@
 {
-  "name": "novapup",
-  "version": "0.4.0",
+  "name": "nova-collar",
+  "version": "0.6.0",
   "license": "Apache-2.0",
   "private": true,
   "description": "Nova Collar \u2014 Hungry Nova Labs agent window: chat, terminal, this system",
   "type": "module",
   "main": "src/main/index.js",
   "bin": {
-    "nova-collar": "src/cli/np.js",
-    "np": "src/cli/np.js"
+    "nova-collar": "src/cli/np.js"
   },
   "scripts": {
     "postinstall": "node scripts/vendor-xterm.js && node scripts/rebuild-pty.js && node scripts/build-mac-control.js",
@@ -20,30 +19,36 @@
     "start": "node scripts/vendor-xterm.js && node scripts/build-mac-control.js && electron .",
     "setup": "node src/cli/np.js install",
     "np": "node src/cli/np.js",
-    "pack": "node scripts/vendor-xterm.js && node scripts/build-mac-control.js && CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --mac dir --publish never && xattr -cr \"dist/mac-arm64/Nova Collar.app\"",
-    "release": "node scripts/check-mac-release.cjs && node scripts/vendor-xterm.js && node scripts/build-mac-control.js && electron-builder --mac dmg zip --arm64 --publish never && node scripts/finalize-mac-release.cjs",
+    "pack": "node scripts/vendor-xterm.js && node scripts/build-mac-control.js && CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --mac dir --publish never",
+    "release": "node scripts/release-mac.cjs",
     "release:win": "node scripts/vendor-xterm.js && electron-builder --win nsis zip --x64 --publish never -c.npmRebuild=false",
     "release:linux": "node scripts/vendor-xterm.js && electron-builder --linux AppImage deb --x64 --publish never",
     "test": "node scripts/test.mjs",
-    "test:app": "node scripts/vendor-xterm.js && electron scripts/test-app.mjs",
+    "test:app": "node scripts/vendor-xterm.js && electron scripts/test-app.mjs && node scripts/test-first-launch-app.mjs",
     "analysis:prepare": "node scripts/prepare-analysis.mjs",
     "test:analysis": "node --test scripts/test-analysis.mjs",
     "test:analysis:live": "node scripts/verify-analysis-live.mjs",
     "test:network": "node --test scripts/test-network.mjs",
-    "network:mcp": "node src/main/network-mcp.js"
+    "network:mcp": "node src/main/network-mcp.js",
+    "evaluate:harness": "node scripts/evaluate-harness.mjs",
+    "test:conversation": "electron scripts/test-conversation-app.mjs",
+    "test:conversation:main": "electron scripts/test-conversation-main.mjs",
+    "test:first-launch:app": "node scripts/vendor-xterm.js && node scripts/test-first-launch-app.mjs"
   },
-  "author": "Hungry Nova",
+  "author": "Hungry Nova Labs LLC",
   "dependencies": {
+    "@modelcontextprotocol/sdk": "1.32.1",
     "@xterm/addon-fit": "^0.10.0",
     "@xterm/xterm": "^5.5.0",
+    "acorn": "8.19.0",
     "electron-updater": "^6.8.9",
+    "eslint-scope": "8.4.0",
     "node-pty": "^1.1.0",
-    "qrcode": "^1.5.4",
-    "@modelcontextprotocol/sdk": "1.32.1"
+    "qrcode": "^1.5.4"
   },
   "devDependencies": {
     "@electron/rebuild": "^4.0.1",
-    "electron": "43.7.7",
+    "electron": "45.3.3",
     "electron-builder": "^26.0.12"
   },
   "build": {
@@ -54,7 +59,7 @@
     "artifactName": "Nova-Collar-${version}-${arch}.${ext}",
     "publish": {
       "provider": "github",
-      "owner": "Squidspork",
+      "owner": "Hungry-Nova-Labs-LLC",
       "repo": "nova-collar"
     },
     "files": [
@@ -63,7 +68,10 @@
       "materials/**/*",
       "package.json",
       "LICENSE",
-      "NOTICE"
+      "NOTICE",
+      "!src/**/* [0-9]*",
+      "!data/**/* [0-9]*",
+      "!materials/**/* [0-9]*"
     ],
     "asarUnpack": [
       "**/node_modules/node-pty/**"
@@ -123,7 +131,8 @@
         "CFBundleName": "Nova Collar"
       },
       "minimumSystemVersion": "13.5",
-      "notarize": false
+      "notarize": false,
+      "sign": "scripts/sign-mac-code.cjs"
     },
     "win": {
       "icon": "build/icon.ico",
@@ -150,7 +159,7 @@
     "linux": {
       "icon": "build/icon.png",
       "category": "Development",
-      "maintainer": "Hungry Nova Labs <noreply@hungrynovalabs.com>",
+      "maintainer": "Hungry Nova Labs LLC <noreply@hungrynovalabs.com>",
       "target": [
         {
           "target": "AppImage",
@@ -171,5 +180,14 @@
   },
   "engines": {
     "node": ">=22.12.0"
+  },
+  "novaCollarChannel": "public",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Hungry-Nova-Labs-LLC/nova-collar.git"
+  },
+  "homepage": "https://github.com/Hungry-Nova-Labs-LLC/nova-collar#readme",
+  "bugs": {
+    "url": "https://github.com/Hungry-Nova-Labs-LLC/nova-collar/issues"
   }
 }

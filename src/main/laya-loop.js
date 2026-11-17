@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { redactSecrets } from "./safe.js";
 
 /** Stop a tool call that is the same work again.
 
@@ -20,9 +21,9 @@ export function briefArgs(args) {
   const raw = String(args || "").trim();
   if (!raw) return "{}";
   try {
-    return JSON.stringify(canon(JSON.parse(raw))).slice(0, 180);
+    return redactSecrets(JSON.stringify(canon(JSON.parse(raw)))).slice(0, 180);
   } catch {
-    return raw.replace(/\s+/g, " ").slice(0, 180);
+    return redactSecrets(raw).replace(/\s+/g, " ").slice(0, 180);
   }
 }
 
@@ -30,7 +31,9 @@ export function toolSig(name, args) {
   let full;
   try { full = JSON.stringify(canon(typeof args === "object" ? args : JSON.parse(String(args || "{}")))); }
   catch { full = String(args || "{}").trim(); }
-  return `${name}:${full.length <= 180 ? full : createHash("sha256").update(full).digest("hex")}`;
+  // Identity is never display text. Hash even short arguments so credentials or
+  // private source snippets cannot escape through a signature in diagnostics.
+  return `${name}:${createHash("sha256").update(full).digest("hex")}`;
 }
 
 export function loopTrace({ ask, trail, next } = {}) {

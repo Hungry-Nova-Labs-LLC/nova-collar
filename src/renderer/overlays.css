@@ -113,6 +113,23 @@
   border: 1px solid var(--line);
 }
 
+#setup-list label {
+  display: grid;
+  gap: 4px;
+  color: var(--voice);
+  font-size: 12px;
+}
+
+#setup-list input {
+  width: 100%;
+  min-height: 36px;
+  padding: 6px 9px;
+  color: var(--voice);
+  background: var(--paws);
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+}
+
 #setup-log {
   max-height: 140px;
   margin: 0;

@@ -7,128 +7,103 @@
   const log = document.getElementById("setup-log");
   const acts = document.getElementById("setup-acts");
   if (!root) return;
-
   let report = null;
-
-  function button(label, fn, primary) {
-    const btn = document.createElement("button");
-    btn.type = "button";
-    btn.className = primary ? "go" : "";
-    btn.textContent = label;
-    btn.onclick = fn;
-    return btn;
-  }
-
-  function show(step) {
-    root.hidden = false;
-    root.dataset.step = step;
-    log.hidden = step !== "install";
-  }
-
-  function hello() {
-    show("hello");
-    kicker.textContent = "setup";
-    title.textContent = "Set up the install";
-    body.textContent = "This looks at the computer Nova Collar is installed on. It can use a model server already there, or download Ollama and a model that fits that computer. Nothing is installed until you say so.";
-    list.replaceChildren();
-    acts.replaceChildren(button("Scan this install", scan, true), button("Skip", skip));
-  }
-
+  let pendingCredential = null;
+  const button = (label,fn,primary=false) => {
+    const item=document.createElement("button");item.type="button";item.className=primary?"go":"";item.textContent=label;item.onclick=fn;return item;
+  };
+  function show(step) {root.hidden=false;root.dataset.step=step;log.hidden=step!=="install";}
   async function scan() {
-    show("scan");
-    kicker.textContent = "scanning";
-    title.textContent = "Looking for a local model";
-    body.textContent = "Checking the computer running Nova Collar for Ollama, LM Studio, and other model servers. No other machine is scanned.";
-    list.replaceChildren();
-    acts.replaceChildren();
-    root.classList.add("busy");
-    try {
-      report = await window.pup.setupScan();
-    } finally {
-      root.classList.remove("busy");
-    }
+    pendingCredential=null;show("scan");kicker.textContent="Checking this computer";title.textContent="Looking for a model server";
+    body.textContent="Checking local model servers. No other computer is scanned and nothing is installed.";
+    list.replaceChildren();acts.replaceChildren();root.classList.add("busy");
+    try {report=await window.pup.setupScan();} catch {report={found:[],error:"The scan could not finish. Try again or connect manually."};}
+    finally {root.classList.remove("busy");}
+    if(report?.decision?.mode==="auto" && report.state) return close(report.state,`Connected to ${report.decision.selected.model}.`);
     found();
   }
-
   function found() {
-    show("found");
-    const mem = report?.memory || {};
-    kicker.textContent = "memory";
-    title.textContent = `${mem.totalGb || "?"} GB on the install`;
-    const lines = [
-      `${mem.freeGb || "?"} GB is free on the computer running Nova Collar. The window itself is about ${mem.appGb} GB.`,
-      `Laya, the decision check, is optional: about ${mem.layaDiskGb} GB on disk and about ${mem.layaRamGb} GB while it is loaded. The window still answers without it.`,
-    ];
-    if (mem.model) {
-      lines.push(`${mem.model.name} fits this install: about ${mem.model.diskGb} GB on disk and about ${mem.model.runGb} GB while answering.`);
-    } else {
-      lines.push("This install has under 8 GB of memory, so a local model will not fit. Use a chat endpoint instead.");
+    show("found");kicker.textContent="Model connection";list.replaceChildren();acts.replaceChildren();
+    let count=0;
+    for(const hit of report?.found || []) {
+      for(const model of hit.models || []) {
+        count++;
+        const loaded=hit.modelDetails?.some(row=>row.id===model&&row.loaded);
+        const item=button(`${hit.name} · ${model}${loaded?" · loaded":""}`,()=>useHit(hit,model));
+        item.className="chat-item";list.append(item);
+      }
+      if(hit.authRequired) {
+        const item=button(`${hit.name} · API key required`,()=>manual(hit.url));item.className="chat-item";list.append(item);
+      }
     }
-    body.textContent = lines.join(" ");
-    list.replaceChildren();
-    for (const hit of report?.found || []) {
-      const model = hit.models?.[0] || "";
-      const row = document.createElement("button");
-      row.type = "button";
-      row.className = "chat-item";
-      row.textContent = model ? `${hit.name} · ${model}` : hit.name;
-      row.onclick = () => useHit(hit, model);
-      list.append(row);
+    title.textContent=count?"Choose a model":"Connect a model server";
+    body.textContent=report?.error || report?.decision?.error || (count
+      ? "Choose the model to use. Already loaded models are marked. Your choice is saved on this computer."
+      : report?.found?.some(hit=>hit.authRequired)
+        ? "A local server is running and requires an API key. Enter the key for that server to find its models."
+        : report?.found?.length
+          ? "A server is running, but no chat model is available. Load a chat model in Ollama or LM Studio, then scan again."
+          : "Start your model server, then scan again. You can also enter a local server address or choose another provider.");
+    acts.append(button("Scan again",scan),button("Connect manually",()=>manual()),button("Choose another provider",skip));
+    const memory=report?.memory;
+    if(!count && memory?.model && memory.platform!=="win32") {
+      acts.append(button(`Install Ollama and download ${memory.model.name} (${memory.model.diskGb} GB)`,install));
     }
-    acts.replaceChildren();
-    if (mem.model) acts.append(button(`Download ${mem.model.name}`, install, true));
-    acts.append(button("Skip", skip));
   }
-
+  function field(label,type,value="") {
+    const wrap=document.createElement("label");wrap.textContent=label;
+    const input=document.createElement("input");input.type=type;input.value=value;input.autocomplete="off";input.spellcheck=false;input.setAttribute("aria-label",label);
+    wrap.append(input);list.append(wrap);return input;
+  }
+  function manual(address="http://127.0.0.1:11434/v1") {
+    show("manual");kicker.textContent="Local connection";title.textContent="Connect to your server";
+    body.textContent="Enter a server address on this computer. The API key is optional and stays in Nova Collar's private local profile. Find models, or enter a model ID you already know.";
+    list.replaceChildren();acts.replaceChildren();
+    const url=field("Local server URL","url",address);
+    const key=field("API key (optional)","password");
+    const model=field("Model ID","text");
+    acts.append(button("Find models and connect",async()=>{
+      root.classList.add("busy");
+      try {
+        report=await window.pup.setupScan({url:url.value,apiKey:key.value});
+        if(report.error) {body.textContent=report.error;return;}
+        const candidates=(report.found || []).flatMap(hit=>(hit.models || []).map(id=>({hit,model:id,loaded:hit.modelDetails?.some(item=>item.id===id&&item.loaded)})));
+        pendingCredential={url:report.found?.[0]?.url || url.value,apiKey:key.value};
+        const loaded=candidates.filter(item=>item.loaded);
+        const selected=loaded.length===1?loaded[0]:candidates.length===1?candidates[0]:null;
+        if(selected) return await useHit(selected.hit,selected.model);
+        found();
+      } catch {body.textContent="The server could not be checked. Confirm its address and key, or scan again.";}
+      finally {root.classList.remove("busy");}
+    },true),button("Connect using model ID",()=>useHit({url:url.value,name:"Local server"},model.value,key.value)),button("Back",found));
+  }
   async function install() {
-    show("install");
-    kicker.textContent = "download";
-    title.textContent = "Setting up Ollama";
-    body.textContent = "Ollama is installed on the computer running Nova Collar and listens on 127.0.0.1 only. The download can take a while.";
-    log.textContent = "";
-    acts.replaceChildren();
-    root.classList.add("busy");
-    let result;
+    show("install");kicker.textContent="Download";title.textContent="Setting up Ollama";
+    body.textContent="Installing Ollama and downloading the selected model onto this computer. This can take a while.";
+    log.textContent="";acts.replaceChildren();root.classList.add("busy");
     try {
-      result = await window.pup.setupInstall();
-    } finally {
-      root.classList.remove("busy");
-    }
-    if (!result?.ok) {
-      body.textContent = result?.error || "The install stopped.";
-      acts.replaceChildren(button("Back", found), button("Skip", skip));
-      return;
-    }
-    close(result.state, `Local model ${result.model} is ready.`);
+      const result=await window.pup.setupInstall();
+      if(!result?.ok) {body.textContent=result?.error || "Installation stopped.";acts.replaceChildren(button("Back",found));return;}
+      close(result.state,`Connected to ${result.model}.`);
+    } catch {body.textContent="Installation stopped. You can connect to an existing server instead.";acts.replaceChildren(button("Back",found));}
+    finally {root.classList.remove("busy");}
   }
-
-  async function useHit(hit, model) {
-    const result = await window.pup.setupUse({ url: hit.url, model });
-    if (!result?.ok) {
-      body.textContent = result?.error || "Could not save that server.";
-      return;
-    }
-    close(result.state, `${hit.name} is the local model.`);
+  async function useHit(hit,model,apiKey) {
+    const credential=apiKey === undefined && pendingCredential?.url===hit.url ? pendingCredential.apiKey : apiKey;
+    try {
+      const result=await window.pup.setupUse({url:hit.url,model,apiKey:credential});
+      if(!result?.ok) {body.textContent=result?.error || "The connection could not be saved.";return;}
+      pendingCredential=null;close(result.state,`Selected ${hit.name}: ${model}.`);
+    } catch {body.textContent="The connection could not be saved. Check that Nova Collar's local profile is writable, then try again.";}
   }
-
   async function skip() {
-    const result = await window.pup.setupSkip();
-    close(result?.state, "");
+    pendingCredential=null;
+    try {const result=await window.pup.setupSkip();close(result?.state,"");}
+    catch {body.textContent="The connection could not be saved. Check that Nova Collar's local profile is writable, then try again.";}
   }
-
-  function close(state, note) {
-    root.hidden = true;
-    root.classList.remove("busy");
-    if (note) window.noteSetup?.(note);
-    window.afterSetup?.(state);
+  function close(state,note) {
+    root.hidden=true;root.classList.remove("busy");if(note)window.noteSetup?.(note);window.afterSetup?.(state);
   }
-
-  window.pup.on((event) => {
-    if (event.type !== "setup-log") return;
-    log.hidden = false;
-    log.textContent += `${event.line}\n`;
-    log.scrollTop = log.scrollHeight;
-  });
-
-  window.openSetup = hello;
+  window.pup.on(event=>{if(event.type!=="setup-log")return;log.hidden=false;log.textContent+=`${event.line}\n`;log.scrollTop=log.scrollHeight;});
+  window.openSetup=initial=>{pendingCredential=null;if(initial?.found){report=initial;found();}else scan();};
 })();

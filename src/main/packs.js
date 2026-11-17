@@ -59,10 +59,16 @@ export const PACKS = [
       tool("host_disk", "Disk usage on this system. Fast — does not scan the whole home folder."),
       tool("host_listen_ports", "Listening TCP/UDP ports on this system."),
       tool("host_run_plan", "Propose a shell command. Does not run it.", { command: { type: "string" }, why: { type: "string" } }, ["command"]),
-      tool("host_run", "Run a command on this system.", { command: { type: "string" } }, ["command"]),
-      tool("host_file_read", "Read a local file.", { path: { type: "string" } }, ["path"]),
+      tool("host_run", "Run a command on this system. Omit cwd to use the current workspace. Set cwd only for an intentionally different directory using its exact already-observed path; do not guess or reconstruct an absolute path. Before changing files, declare affected files or small source directories in paths for bounded backups and project verification. Undeclared shell writes are not backed up.", { command: { type: "string" }, cwd: { type: "string" }, timeoutMs: { type: "integer", minimum: 1, maximum: 90000 }, paths: { type: "array", maxItems: 50, items: { type: "string" }, description: "Mutation paths declared before execution; checkpoints cover at most 500 files, 10 MiB per file and 50 MiB per turn." } }, ["command"]),
+      tool("host_file_read", "Read a local file or list a directory. For files offset is a zero-based character position in the redacted text view; limit is the maximum characters requested (up to 80000). Output may be shorter to fit the response budget: continue at read.nextOffset, and compare viewSha256 across pages. A partial page is not whole-file coverage.", { path: { type: "string" }, offset: { type: "integer", minimum: 0 }, limit: { type: "integer", minimum: 1, maximum: 80000 } }, ["path"]),
       tool("host_file_write_plan", "Propose a file write. Does not write.", { path: { type: "string" }, content: { type: "string" } }, ["path", "content"]),
-      tool("host_file_write", "Write a local file.", { path: { type: "string" }, content: { type: "string" } }, ["path", "content"]),
+      tool("host_file_write", "Write a new local file or a necessary full replacement. Prefer host_file_edit for small changes to an existing file.", { path: { type: "string" }, content: { type: "string" } }, ["path", "content"]),
+      tool("host_file_edit", "Prefer this for focused changes to existing local files. Read current content first. Each nonempty oldText must match exactly once in the original file; edits must not overlap. All replacements validate before one atomic write. A failed match saves nothing; read again rather than rewriting the file. Use host_file_write for new files.", {
+        path: { type: "string" },
+        edits: { type: "array", minItems: 1, maxItems: 50, items: { type: "object", properties: {
+          oldText: { type: "string", minLength: 1 }, newText: { type: "string" },
+        }, required: ["oldText", "newText"], additionalProperties: false } },
+      }, ["path", "edits"]),
     ],
   },
   {
@@ -167,6 +173,7 @@ export const LOCAL_PACK_TOOLS = new Set([
   "say_plain",
   "host_file_read",
   "host_file_write",
+  "host_file_edit",
   "net_report",
   "docker_ps",
   "incident_open",

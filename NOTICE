@@ -1,10 +1,10 @@
 Nova Collar
-Copyright 2026 Hungry Nova Labs
+Copyright 2026 Hungry Nova Labs LLC
 
 This product includes software developed at Hungry Nova Labs.
 
 Software analysis includes REA 6.4.0 (Copyright (c) 2026 morluto, MIT),
-Ghidra 12.1.4 (Apache-2.0 and its third-party components), Node.js 24.18.0,
+Ghidra 12.1.4 (Apache-2.0 and its third-party components), Node.js 24.22.3,
 and Eclipse Temurin 21.0.12.1+1 (GPLv2 with the Classpath Exception).
 Original licenses and notices are included in Resources/analysis on macOS
 and resources/analysis on Windows/Linux. Complete corresponding Temurin source
@@ -15,3 +15,7 @@ with the SDK dependency. Hungry Nova Labs provides the integration and builds
 the macOS decompiler and GNU demanglers from unmodified upstream source. No upstream endorsement
 is implied. See analysis/THIRD-PARTY-NOTICES.txt and bundle-lock.json for versions
 and provenance.
+
+Optional lexical source observations use Acorn 8.19.0 (MIT), eslint-scope 8.4.0,
+esrecurse 4.3.0 and estraverse 5.3.0 (BSD-2-Clause). Their unmodified notices
+and licenses are reproduced in data/licenses/runtime-reference-libraries.txt.

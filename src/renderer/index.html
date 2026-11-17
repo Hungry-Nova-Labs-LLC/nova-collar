@@ -17,6 +17,8 @@
     <link rel="stylesheet" href="crew.css" />
     <link rel="stylesheet" href="overlays.css" />
     <link rel="stylesheet" href="motion.css" />
+    <link rel="stylesheet" href="conversation.css" />
+    <link rel="stylesheet" href="workspace.css" />
   </head>
   <body>
     <div class="creature" id="creature" data-mood="idle">
@@ -24,21 +26,14 @@
       <div class="atmosphere" aria-hidden="true"><i></i><i></i><b></b></div>
       <div class="veil" aria-hidden="true"><i></i><i></i><i></i></div>
       <div class="halo" aria-hidden="true"></div>
-      <div class="ears" aria-hidden="true">
-        <i class="ear left"></i>
-        <i class="ear right"></i>
-      </div>
       <header class="head">
         <div class="id">
-          <div class="eyes" id="eyes" data-mood="idle">
-            <span class="eye"><i></i></span>
-            <span class="eye"><i></i></span>
-          </div>
+          <div class="workspace-mark" id="eyes" data-mood="idle" aria-hidden="true">N</div>
           <strong class="brand" id="brand" title="Nova Collar">Nova Collar</strong>
           <div class="who">
             <button type="button" id="crew-tag" class="crew-tag" hidden></button>
             <button type="button" id="goal-tag" class="goal-tag" hidden></button>
-            <button type="button" id="model-btn" class="model" title="Switch model">Local 3.8</button>
+            <button type="button" id="model-btn" class="model" title="Switch model">Choose a model</button>
           </div>
           <button type="button" id="home-fold" class="home-fold" aria-expanded="true" title="Hide the bar"></button>
           <div class="win">
@@ -109,6 +104,10 @@
           <strong>settings</strong>
           <button type="button" class="sheet-x" title="Close" aria-label="Close">×</button>
         </div>
+        <p class="sheet-sub">context</p>
+        <p class="sheet-note">Inspect the last model request or make a fresh local preview. Counts and source paths only; no model request or memory search.</p>
+        <div class="packs"><button type="button" id="context-last">last request</button><button type="button" id="context-next">next preview</button></div>
+        <pre id="context-report" class="context-report" aria-live="polite">No context metadata opened yet.</pre>
         <p class="sheet-sub">software analysis</p>
         <p class="sheet-note" id="analysis-ready">Bundled REA and headless Ghidra.</p>
         <div class="packs"><button type="button" id="analysis-pick">choose an app or file</button><button type="button" id="analysis-licenses">licenses</button></div>
@@ -122,7 +121,7 @@
         <p class="sheet-note" id="voice-now">How I talk.</p>
         <form class="dossier" id="voice-form">
           <label>describe a voice, or write the whole thing
-            <textarea id="voice-wish" rows="3" maxlength="800" placeholder="Warm, sharp, a little feral. Or paste the whole personality."></textarea>
+            <textarea id="voice-wish" rows="3" maxlength="800" placeholder="Describe the tone, level of detail, and way you want Nova to work."></textarea>
           </label>
           <button type="button" id="voice-make">make four voices</button>
         </form>
@@ -301,17 +300,32 @@
           <div id="terminal"></div>
         </section>
       </div>
+      <div class="input-status" id="input-status" hidden>
+        <span id="pending-input" role="status"></span>
+        <button type="button" id="resume-input" hidden>Continue</button>
+        <button type="button" id="question-open" hidden>Nova has a question · Answer</button>
+      </div>
       <footer class="mouth">
         <div class="say">
           <button type="button" class="pack-hint" id="pack-hint" hidden></button>
           <textarea id="input" rows="1" placeholder="Talk to Nova Collar"></textarea>
         </div>
+        <button type="button" id="stop" class="conversation-stop" title="Stop" aria-label="Stop" hidden>Stop</button>
         <button type="button" id="send" class="go" title="Send" aria-label="Send">
           <svg class="i i-send" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 19V5M5.5 11.5 12 5l6.5 6.5" /></svg>
           <svg class="i i-stop" viewBox="0 0 24 24" aria-hidden="true"><rect x="7" y="7" width="10" height="10" rx="2" fill="currentColor" /></svg>
         </button>
       </footer>
     </div>
+    <dialog id="question-dialog" class="question-dialog" aria-labelledby="question-title">
+      <form id="question-form">
+        <header><h2 id="question-title">A question from Nova</h2><button type="button" id="question-stop">Stop</button><button type="button" id="question-minimize">Minimize</button></header>
+        <p class="question-note">Choose a suggestion or write your own answer, then submit.</p>
+        <div id="question-fields"></div>
+        <p id="question-error" role="alert"></p>
+        <footer><button type="submit" id="question-submit" disabled>Send answer</button></footer>
+      </form>
+    </dialog>
     <div class="setup" id="setup" hidden>
       <div class="setup-orb" aria-hidden="true"></div>
       <p class="setup-kicker" id="setup-kicker"></p>
@@ -322,7 +336,7 @@
       <div class="setup-acts" id="setup-acts"></div>
     </div>
     <div class="wake" id="wake" hidden>
-      <p>Pick where your model lives, then connect. Local 3.8 needs no key. The tools key is optional — only web search and the remote computer use it.</p>
+      <p>Choose the server to use. Local servers are discovered on this computer. The tools key is optional and is used only for configured remote tools.</p>
       <label>Provider
         <select id="wake-provider"></select>
       </label>
@@ -342,16 +356,13 @@
       <button type="button" id="credits-close">close</button>
       <div class="credits-sky">
         <div class="credits-crawl" id="credits-crawl">
-          <p class="credits-kicker">Hungry Nova Labs</p>
-          <h2>Thank you</h2>
-          <p>Thank you to my wife, who stood by me at my worst and is still giving me the best lessons.</p>
-          <p>Thank you to Nova, our Dalmatian, for always licking my face between bug fixes.</p>
-          <p>Thank you to Gwendoleth (Gwen), Mavis, Opal, and Baron. His full Christian name would not fit here.</p>
-          <p>Thank you to our chickens, who kept us fed through Hurricane Helene, when we had no power and still had eggs. Steve, Warbeak, and Cadbury.</p>
-          <h2>And thank you for the software</h2>
+          <p class="credits-kicker">Hungry Nova Labs LLC</p>
+          <h2>Nova Collar</h2>
+          <p>Nova Collar is developed and maintained by Hungry Nova Labs LLC.</p>
+          <h2>Open-source software</h2>
           <p>These are the licenses on the pieces Nova Collar is built with, and what each one asks of anyone who keeps a copy.</p>
           <h2>MIT</h2>
-          <p>Electron 36, xterm.js and its fit addon, node-pty, and qrcode are MIT. electron-builder and @electron/rebuild, the tools that package the window, are MIT too.</p>
+          <p>Electron, xterm.js and its fit addon, node-pty, and qrcode are MIT. electron-builder and @electron/rebuild, the tools that package the window, are MIT too.</p>
           <p>The MIT license lets us use, change, and share them. The duty is to keep the copyright line and the permission notice with any real copy of that software. It is offered as is, with no warranty.</p>
           <p>Electron’s notice names the Electron contributors and GitHub Inc. xterm.js names the xterm.js authors, SourceLair, and Christopher Jeffrey. node-pty’s notice names Christopher Jeffrey. qrcode names Ryan Day.</p>
           <h2>Chromium, inside Electron</h2>
@@ -364,7 +375,7 @@
           <p>The bundled Node runtime retains its MIT and third-party notices. Eclipse Temurin uses GPLv2 with the Classpath Exception; its notices and complete corresponding source are included with the analysis bundle. Open software analysis licenses in settings for their locations.</p>
           <h2>Ollama</h2>
           <p>If setup installs Ollama, that project is MIT as well. Same duty: keep its copyright and permission notice with the copy. Nova Collar does not ship Ollama inside the window.</p>
-          <p class="credits-end">Own your data. Own your future.</p>
+          <p class="credits-end">Hungry Nova Labs LLC</p>
         </div>
       </div>
     </div>
@@ -385,6 +396,9 @@
     <script src="setup-ui.js"></script>
     <script src="crew-render.js"></script>
     <script src="app.js"></script>
+    <script src="context-ui.js"></script>
     <script src="spec-ui.js"></script>
+    <script src="workspace.js"></script>
+    <script src="recovery-ui.js"></script>
   </body>
 </html>

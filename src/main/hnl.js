@@ -53,6 +53,7 @@ export function isHnlTool(name) {
 async function recallFromSearch(cfg, q) {
   const search = await fetch(`${cfg.toolsUrl}/tools/memory_search`, {
     method: "POST",
+    redirect: "error",
     headers: {
       authorization: `Bearer ${cfg.toolsKey}`,
       "content-type": "application/json",
@@ -99,6 +100,7 @@ export async function runHnlTool(name, args, cfg) {
   try {
     response = await fetch(`${cfg.toolsUrl}${path}`, {
       method: "POST",
+      redirect: "error",
       headers: {
         authorization: `Bearer ${cfg.toolsKey}`,
         "content-type": "application/json",

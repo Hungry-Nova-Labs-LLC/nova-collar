@@ -14,6 +14,23 @@ function stripAnsi(text) {
 
 export function bindPty(session) {
   pty = session;
+  session.onExit?.(()=>{if(pty === session)pty=null;});
+}
+
+export function closeTerminal() {
+  const owned = pty;
+  pty = null;
+  if (!owned) return Promise.resolve({ok:true,closed:false});
+  return new Promise(resolve=>{
+    let settled=false,subscription;
+    const finish=ok=>{if(settled)return;settled=true;clearTimeout(timer);subscription?.dispose?.();resolve({ok,closed:true});};
+    const timer=setTimeout(()=>finish(false),1500);
+    try {
+      subscription=owned.onExit?.(()=>finish(true));
+      owned.kill();
+      if(!subscription)finish(true);
+    } catch(error) {finish(["ESRCH","EBADF"].includes(error?.code));}
+  });
 }
 
 export function appendTerm(data) {

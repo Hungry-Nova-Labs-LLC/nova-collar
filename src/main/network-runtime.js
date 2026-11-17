@@ -1,5 +1,3 @@
-import { Client } from '@modelcontextprotocol/sdk/client/index.js';
-import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
 import { join } from 'node:path';
 import { APP_HOME, ROOT } from './config.js';
 import { networkEnv } from './network-core.js';
@@ -12,6 +10,10 @@ export class NetworkRuntime {
     if (this.connecting) return this.connecting;
     if (this.client) return this.client;
     this.connecting = (async () => {
+      const [{ Client }, { StdioClientTransport }] = await Promise.all([
+        import('@modelcontextprotocol/sdk/client/index.js'),
+        import('@modelcontextprotocol/sdk/client/stdio.js'),
+      ]);
       const transport = new StdioClientTransport({ command: this.command, args: [this.entry],
         env: { ...networkEnv(), ELECTRON_RUN_AS_NODE: '1', NOVA_NETWORK_HOME: this.home }, stderr: 'pipe' });
       const client = new Client({ name: 'nova-collar', version: '0.4.0' }, { capabilities: {} });

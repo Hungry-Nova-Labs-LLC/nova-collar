@@ -5,11 +5,13 @@ import {
   applyEndpoint,
   applyFound,
   applyPull,
+  bootstrapConnection,
   choiceList,
   inspectInstall,
   linkNp,
   parseChoice,
 } from "./install.js";
+import { localChatCandidates } from "./setup.js";
 
 function ask(rl, prompt) {
   return new Promise((resolve) => {
@@ -72,6 +74,14 @@ export async function runInstaller(argv = []) {
     return 0;
   }
 
+  const connection = bootstrapConnection(info);
+  if (connection.mode === "auto" || (connection.mode === "saved" && connection.ready)) {
+    say(connection.mode === "auto" ? `Using ${connection.selected.name}: ${connection.selected.model}.` : "Kept the existing model connection.");
+    const linked=linkNp();
+    say(linked.note || (linked.linked ? `nova-collar is ${linked.path}` : "nova-collar was left as it is."));
+    return 0;
+  }
+
   say("Nova Collar install");
   say("");
   say("Bring your own model. Nova Collar is not locked to one.");
@@ -88,10 +98,10 @@ export async function runInstaller(argv = []) {
   say("");
 
   if (yes || !process.stdin.isTTY) {
-    say("The model already saved on this computer was left as it is.");
+    say("No model choice was changed. Open Nova Collar to choose a model or finish the connection.");
     const linked = linkNp();
     say(linked.note || (linked.linked ? `nova-collar is ${linked.path}` : "nova-collar was left as it is."));
-    say("Install finished. Open Nova Collar, or run nova-collar.");
+    say("Program installed; model setup is still needed.");
     return 0;
   }
 
@@ -105,7 +115,7 @@ export async function runInstaller(argv = []) {
 
   if (choice.source === "endpoint") {
     const rl = createInterface({ input: process.stdin, output: process.stdout });
-    const url = await ask(rl, "Model address (https://…/v1): ");
+    const url = await ask(rl, "Model address (local http://127.0.0.1:port/v1 or https://…/v1): ");
     const model = await ask(rl, "Model name: ");
     rl.close();
     let chatKey = "";
@@ -121,11 +131,13 @@ export async function runInstaller(argv = []) {
     say(`Using ${saved.model}.`);
   } else if (choice.source === "found") {
     const rl = createInterface({ input: process.stdin, output: process.stdout });
-    const hit = info.found[0];
-    say(`${hit.name} models: ${(hit.models || []).join(", ")}`);
-    const name = await ask(rl, `Model [${hit.models?.[0] || ""}]: `);
+    const candidates = localChatCandidates(info);
+    for (const [index,item] of candidates.entries()) say(`${index+1}. ${item.name}: ${item.model}${item.loaded?" (loaded)":""}`);
+    const number = await ask(rl, "Model number [1]: ");
     rl.close();
-    const saved = applyFound(hit, name || hit.models?.[0]);
+    const picked=candidates[Number(number || "1")-1];
+    if(!picked) {say("Choose one of the listed model numbers.");return 1;}
+    const saved = applyFound({url:picked.url,models:[picked.model]},picked.model);
     if (!saved.ok) {
       say(saved.error);
       return 1;

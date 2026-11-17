@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { appendTerm, readTerminal } from "../src/main/term-bridge.js";
+import { appendTerm, bindPty, closeTerminal, readTerminal, sendTerminal } from "../src/main/term-bridge.js";
 
 appendTerm("\x1b]0;title\x07\x1b[32mready\x1b[0m\r\n");
 assert.equal(readTerminal(), "ready\n", "strip color and BEL-terminated titles");
@@ -24,3 +24,11 @@ assert.equal(readTerminal(), "ready\nverified output\nprompt> second output\nC1 
   "handle single-character OSC and ST controls");
 
 console.log("PASS terminal: colors, BEL/ST shell records, chunk boundaries, preserved command output");
+
+let kills=0,closed;
+bindPty({onExit:callback=>{closed=callback;return{dispose(){}};},kill(){kills++;closed();}});
+assert.equal((await closeTerminal()).ok,true);
+assert.equal(kills,1,"only the terminal owned by this harness is stopped");
+assert.equal(sendTerminal("must not run").ok,false);
+await closeTerminal();assert.equal(kills,1,"repeated shutdown cannot kill another process");
+console.log("PASS terminal: bounded owned-session cleanup is idempotent");

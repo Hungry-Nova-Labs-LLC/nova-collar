@@ -1,19 +1,15 @@
 import { realpathSync } from "node:fs";
-import { homedir } from "node:os";
 import { isAbsolute, join, relative, resolve } from "node:path";
+import { mainProfileHome } from "./profile-paths.js";
 
-function novapupHome() {
-  const override = String(process.env.NOVAPUP_HOME || "").trim();
-  if (override && !process.versions.electron) return resolve(override);
-  return join(homedir(), ".novapup");
-}
+const novapupHome = mainProfileHome;
 
 const BOT_ID = /^bot-[a-z0-9]{4,24}$/;
 const CHAT_ID = /^chat-[a-z0-9]{4,24}$/;
 const TASK_ID = /^task-[a-z0-9]{4,24}$/;
 const PACK = /^(term|host|net|docker|incident|hnl|computer|desk|analysis|ghidra|wireshark)$/;
 const SECRET_NAME = /(?:^|\/)(?:env|credentials|secret|secrets|\.env(?:\..+)?|.*\.(?:pem|p12|key)$|id_rsa|id_ed25519|id_ecdsa|id_dsa|authorized_keys|known_hosts)$/i;
-const SECRET_CMD = /(?:\.novapup\/env|\bHNL_(?:CHAT|TOOLS|LAB)_?(?:KEY|TOKEN)|\bCOMPUTER_TOKEN|\bLM_STUDIO_API_KEY|\bid_rsa\b|\bid_ed25519\b)/i;
+const SECRET_CMD = /(?:\.(?:novapup|nova-collar-public)\/env|\bHNL_(?:CHAT|TOOLS|LAB)_?(?:KEY|TOKEN)|\bCOMPUTER_TOKEN|\bLM_STUDIO_API_KEY|\bid_rsa\b|\bid_ed25519\b)/i;
 const SECRET_TEXT = /(?:hnl_[A-Za-z0-9]{8,}|sk-[A-Za-z0-9_-]{12,}|Bearer\s+[A-Za-z0-9._\-+=\/]{12,})/g;
 const PRIVATE_V4 = /^(?:127\.|10\.|192\.168\.|169\.254\.|0\.0\.0\.0$|172\.(?:1[6-9]|2\d|3[01])\.)/;
 
@@ -108,8 +104,12 @@ export function denySecretCommand(command) {
   return SECRET_CMD.test(String(command || "").replaceAll("\\", "/")) ? "blocked a secrets command" : "";
 }
 
-export function redactSecrets(value) {
-  return String(value ?? "").replace(SECRET_TEXT, "[redacted]");
+export function redactSecrets(value, explicitSecrets = []) {
+  let text=String(value ?? "");
+  for (const secret of [...new Set(explicitSecrets.filter(item=>typeof item === "string" && item))].sort((a,b)=>b.length-a.length)) {
+    text=text.split(secret).join("[redacted]");
+  }
+  return text.replace(SECRET_TEXT, "[redacted]");
 }
 
 export function publicHttpsUrl(raw) {
@@ -151,7 +151,8 @@ export function allowServiceUrl(raw, kind) {
   try {
     const url = new URL(String(raw || ""));
     if (kind === "local") {
-      return url.protocol === "http:" && (url.hostname === "127.0.0.1" || url.hostname === "localhost") ? url.toString().replace(/\/$/, "") : "";
+      return url.protocol === "http:" && ["127.0.0.1", "localhost", "[::1]"].includes(url.hostname)
+        && !url.username && !url.password && !url.search && !url.hash ? url.toString().replace(/\/$/, "") : "";
     }
     if (url.protocol !== "https:" || url.username || url.password) return "";
     if (isPrivateHost(url.hostname)) return "";

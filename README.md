@@ -1,14 +1,16 @@
 # Nova Collar
 
-Nova Collar is the desktop agent harness from Hungry Nova Labs. One Electron window holds the conversation, a live terminal, and the tools that do the work. You bring the model. Nothing in this download locks you to one.
-
-We use this harness at Hungry Nova Labs. I am building it into a tool we depend on, and I put it on GitHub to hear what you find.
+Nova Collar is the desktop agent harness from Hungry Nova Labs LLC. One Electron window holds the conversation, a live terminal, and configured tools. It connects to a model server selected by the user.
 
 ## Install
 
-**Source version: 0.4.0.** Adds a [Wireshark MCP suite](docs/wireshark.md) for bounded traffic capture, local device discovery, anomaly evidence and opening captures in Wireshark, with visible tool calls and action approvals. Wireshark/TShark and optional Nmap are separately installed. The latest notarized Mac installer is [0.3.1](https://github.com/Squidspork/nova-collar/releases/tag/v0.3.1); it contains REA/Ghidra but does not include the new Wireshark pack. Use the source version for this feature until a newer platform installer is published.
+**Current version: 0.6.0.** The [workspace notes](docs/WORKSPACE-UPGRADE.md) cover the new desktop layout, public-source boundaries, and local verification.
 
-**The Mac app.** Download the `.dmg` from [v0.3.1](https://github.com/Squidspork/nova-collar/releases/tag/v0.3.1), drag Nova Collar to Applications, and open it. This installer is for Apple Silicon Macs running macOS 13.5 or newer and includes the analysis engines. The obsolete v0.2.0 downloads remain withdrawn. Windows x64 builds remain available; see below.
+The [Nova Tag integration notes](docs/TAG-INTEGRATION.md) describe bounded capacity waiting, observed progress, exact local history recall and explicit model settings. The [completion notes](docs/AUTONOMOUS-COMPLETION.md) describe verification, loop control and latency fixes in this iteration.
+
+**Public baseline.** Brings the [Hungry Nova Labs methodology](docs/HNL-METHODOLOGY.md) into the public harness: ordered saved guidance, deliberate questions, durable file/project verification, scoped repair lessons, bounded helpers, checkpoints and context budgeting. See the [implementation and limits](docs/PORTING-STATUS.md). Includes the [Wireshark MCP suite](docs/wireshark.md) for bounded traffic capture, local device discovery, anomaly evidence and opening captures in Wireshark, with visible tool calls and action approvals. Wireshark/TShark and optional Nmap are separately installed.
+
+**The Mac app.** Download `Nova-Collar-0.6.0-arm64.zip` from [v0.6.0](https://github.com/Hungry-Nova-Labs-LLC/nova-collar/releases/tag/v0.6.0), open the archive, drag Nova Collar to Applications, and open it. The ZIP contains the signed app with its stapled notarization ticket and neutral archive metadata. It is for Apple Silicon Macs with a declared macOS 13.5 minimum and includes the analysis engines. Runtime tests ran on the current Mac; the macOS 13.5 deployment targets were checked by compilation and native metadata inspection. See the release's verification receipt for the tested package and limits. The obsolete v0.2.0 downloads remain withdrawn. Earlier Windows x64 builds remain available; see below.
 
 To build it yourself from the checkout:
 
@@ -22,12 +24,12 @@ The app lands at `dist/mac-arm64/Nova Collar.app`. Packaging downloads and verif
 **From source, with the CLI.** macOS and Linux:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/Squidspork/nova-collar/main/scripts/get-collar.sh | sh
+curl -fsSL https://raw.githubusercontent.com/Hungry-Nova-Labs-LLC/nova-collar/main/scripts/get-collar.sh | sh
 ```
 
-Clone it and run `scripts/get-collar.sh` from the checkout, or run the one line above. Either way it lands in `~/NovaCollar`, installs the dependencies, and puts `nova-collar` and `np` on your PATH. It does not pick a model for you.
+Clone it and run `scripts/get-collar.sh` from the checkout, or run the one line above. Either way it lands in `~/NovaCollar`, installs the dependencies, and puts `nova-collar` and `np` on your PATH. First launch uses the connection discovery described below.
 
-**Windows x64.** The previous packaged installer, `Nova-Collar-0.2.2-x64.exe`, is available from [v0.2.2](https://github.com/Squidspork/nova-collar/releases/tag/v0.2.2). Run it and open Nova Collar from the Start menu. That installer was tested on Windows 11. Electron requires Windows 10 1809 or newer; Windows 10 has not been tested.
+**Windows x64.** The previous packaged installer, `Nova-Collar-0.2.2-x64.exe`, is available from [v0.2.2](https://github.com/Hungry-Nova-Labs-LLC/nova-collar/releases/tag/v0.2.2). Run it and open Nova Collar from the Start menu. That installer was tested on Windows 11. Electron requires Windows 10 1809 or newer; Windows 10 has not been tested.
 
 To build the Windows installer from source, use Node.js 22.12 or newer:
 
@@ -36,9 +38,9 @@ npm ci
 npm run release:win
 ```
 
-The output is `dist/Nova-Collar-0.4.0-x64.exe`. The installer adds Nova Collar to the Start menu and desktop. The window terminal and host commands use Windows PowerShell. The Windows build uses node-pty’s bundled Node-API binaries, so Visual Studio is not required for that dependency. The 0.3.0 analysis bundle has been engine-tested only on Apple Silicon; Windows headless analysis is experimental upstream and the Windows package has not been validated for this release.
+The output is `dist/Nova-Collar-0.6.0-x64.exe`. The installer adds Nova Collar to the Start menu and desktop. The window terminal and host commands use Windows PowerShell. The Windows build uses node-pty’s bundled Node-API binaries, so Visual Studio is not required for that dependency. The 0.3.0 analysis bundle has been engine-tested only on Apple Silicon; Windows headless analysis is experimental upstream and the Windows package has not been validated for this release.
 
-For local inference, install and start [Ollama for Windows](https://ollama.com/download/windows), then choose **On this computer (Ollama / LM Studio)**, scan, and select an installed model. Selecting a local model clears any previously configured fast/thinking roles so the whole turn stays local. The Hungry Nova endpoint and key remain saved for explicit model switching; there is no automatic cloud fallback. Local setup uses `http://127.0.0.1:11434/v1`. The model picker lists the models found on local servers at startup; use the local setup scan to refresh it. For example, select the exact installed tag `qwen3.8:27b` to use the normal local 27B model. Model names are discovered, not downloaded automatically. This includes custom models such as `rafw007/qwen3.8-27b-redteam:latest`.
+For local inference, install and start [Ollama for Windows](https://ollama.com/download/windows), then choose **On this computer (Ollama / LM Studio)**, scan, and select an installed model. Selecting a local model clears any previously configured fast/thinking roles so the whole turn stays local. The Hungry Nova endpoint and key remain saved for explicit model switching; there is no automatic cloud fallback. Local setup uses `http://127.0.0.1:11434/v1`. The model picker lists the models found on local servers at startup; use the local setup scan to refresh it. Select the exact installed tag shown by the local server. Model names are discovered, not downloaded automatically.
 
 ```bash
 nova-collar install     # show this computer's memory, ask where answers come from
@@ -48,18 +50,89 @@ nova-collar update laya # fetch the optional decider and set up its Python
 
 `install` shows the memory on this computer and asks where answers should come from: a model you already have, an address you paste, or a smaller local model when the memory fits. The same questions are MCP tools, `install_scan` and `install_apply`, from `node scripts/install-mcp.mjs`.
 
+## Main application and profiles
+
+The main application uses `~/.novapup` for its configuration, chats and evidence,
+the `novapup` Electron profile, and application identity
+`com.hungrynova.novapup`. This retains the official main application's profile
+location when upgrading. Source-run tests can use an explicit temporary
+`NOVAPUP_HOME`; packaged applications retain the main profile. Never commit
+connection settings or bundle a private profile in a release.
+
+## First launch
+
+Nova Collar checks running servers on this computer: Ollama, LM Studio,
+llama.cpp and OpenAI-compatible services on the usual local ports. An explicit
+loopback `OLLAMA_URL` or `OLLAMA_HOST` can provide a different port. Existing
+saved model and provider settings take precedence.
+
+With no saved connection, one available chat model is selected automatically.
+If several are available but exactly one is already loaded, that model is used.
+Otherwise the window lists the detected chat models for a choice. Embedding
+models are excluded from chat selection. Discovery reads bounded model metadata;
+it does not run inference, scan other machines, start applications or download
+models automatically.
+
+If a local server requires authentication, enter its API key in **Connect
+manually**. That key stays in the private local profile and is used only for its
+selected endpoint; a hosted provider's key is never borrowed for local access.
+If nothing is found, start the model server and choose **Scan again**, enter a
+local address and model ID, or choose another provider. Installing Ollama or
+downloading a model requires an explicit action. Nova Collar does not read
+Ollama's or LM Studio's private configuration files.
+
+## Keep working in the same conversation
+
+Send guidance while a reply is running; each message is saved separately and
+incorporated after the active model request or tool batch. Stop, errors and
+restarts leave unconsumed messages paused. **Continue** or another deliberate
+Send resumes them. An action that already started cannot be undone by steering.
+One lead turn per profile prevents the window and CLI from racing.
+
+When a detail is needed, a question panel offers unselected suggestions and a
+separate text field. Choose or type an answer, then submit. Minimize preserves
+the question draft; Stop cancels the wait. Question wording and silence are
+never authorization. The CLI accepts busy guidance, `/continue`, and explicit
+`/answer ["answer one", "answer two"]`; noninteractive runs state missing details
+without waiting for a terminal answer.
+
+`/checkpoints` lists file versions and uncovered paths. `/undo [id]` restores
+covered files only if no subsequent edits conflict; it does not undo external
+service actions. Declare shell mutations with `host_run.paths` before execution.
+Project checks use a human-authored `.nova/checks.json` or existing manifest
+commands. Missing checks and partial coverage remain unverified.
+
+`/context` shows metadata from the actual last dispatched lead request after
+compaction. `/context next` builds a fresh local preview. The assistant has the
+same read-only `context_info` tool; Settings → context exposes both views.
+Counts include tool schemas and reserved reply capacity, and distinguish full
+instruction files, skill catalogs, bounded memory, and project references.
+Snapshots keep counts and source paths, with no copied prompt/file/schema
+bodies. Estimates are not provider billing. Instruction files load in full within
+explicit limits; referenced files require a separate read.
+
+Helpers receive a bounded packet with original/latest incorporated message
+sources, timestamps and omission counts. Pending messages are excluded until
+incorporated. Image evidence retains its actual source, and helper selection
+metadata is saved with the tool receipt.
+
+`/dependencies` reports dated local tool availability without model probes or
+installation. `npm run evaluate:harness` emits a reproducible isolated fixture
+report, with source/grader hashes. It measures harness behavior, not live model
+quality or general coding parity.
+
 ## Pick a model
 
 Nova Collar is model-agnostic, and the window makes the connection the first thing you do. Choose a provider, paste your key, and connect:
 
-- **Hungry Nova Labs** — paste the key we gave you and connect. The picker discovers your account's current models automatically, including MiMo V2.6 Flash, MiniMax M2.7, Hemingway, and Nova Pup Ultrafast when available. Select one model for the entire turn, or use **4B + 27B** to configure separate fast and thinking roles.
+- **Hungry Nova Labs** — paste the key we gave you and connect. The picker discovers the account's current model IDs and capabilities automatically. Select one model for the whole turn, or explicitly select fast and thinking roles from that catalog. Retired fixed model pairs are not restored automatically.
 - **OpenAI, OpenRouter, Groq** — your own key; the address is already filled in, and common model names are offered.
 - **Custom (OpenAI-compatible)** — any https endpoint you paste, with your own key and model.
 
 Hosted models refresh on launch, after connecting a provider, and when opening the model picker (at most once every five minutes). **Refresh available models** forces a new scan. The last successful catalog survives restarts and remains available during outages, with an error shown when a refresh fails. Catalogs are scoped to the provider and credential; keys are never stored in the catalog. Saved model and lane IDs remain selectable. Model descriptions appear on hover; models declaring no tool support are labeled **chat only**, and advertised output limits are respected. Discovering a model does not download it or guarantee its backend is online.
 - **On this computer** — scan for a local server you already run (Ollama or LM Studio). No key needed.
 
-That is the whole connection. If I set up Nova Collar on another computer and hand someone a key, the window connects and starts working — no files to edit, nothing else to wire.
+The window saves the selected provider, model, and connection settings in the local profile.
 
 **By hand, if you prefer.** The window writes your choice to `~/.novapup/env` (macOS and Linux) or `.novapup\env` in your user profile (Windows). You can edit it directly:
 
@@ -80,7 +153,7 @@ These checks also cover sub-agents, background work, and automatic harness execu
 
 [Release notes](CHANGELOG.md) record model discovery, conversation-history fixes, and the earlier Windows findings shared with Mac. Local and hosted connections stay explicit, the smaller model gets a bounded tool loop, and success claims must follow tool evidence. Windows has PowerShell, file, host, network, and Docker tools; native screen control remains Mac-only. Docker requires a running Docker engine.
 
-For a source checkout, use Node.js 22.12 or newer, `npm ci`, then `npm test`. Tests isolate app settings in temporary folders and do not require a model server or GPU. CI runs on Mac, Windows, and Linux, including the Electron window and native terminal checks. Mac release builds need Xcode command-line tools, a Developer ID certificate, and Apple notarization credentials; see [release instructions](docs/releasing.md).
+For a source checkout, use Node.js 22.12 or newer, `npm ci`, then `npm test`. Tests isolate app settings in temporary folders and do not require a model server or GPU. Company release checks run on company-controlled hardware; each release records its actual platform coverage and Electron/native-terminal results. Public Mac builds require Xcode command-line tools, an explicitly pinned and approved Developer ID certificate, and validated notarization credentials; see [release instructions](docs/releasing.md).
 
 ## How a turn works
 
@@ -133,11 +206,11 @@ requirements; bundling REA and Ghidra does not install every third-party engine.
 
 ### The terminal is a two-way door
 
-The window has a live terminal. The agent can type into it and read it, so it can run a command where you can watch, and the chat shows what it typed. You can also talk back to the agent from that same terminal: `np "what you want"` runs a turn on the same chats as the window. When the agent changes its working directory, the terminal follows. It is meant for frictionless system work — you and the agent at one prompt.
+The window has a live terminal. The agent can type into it and read it, so it can run a command where you can watch, and the chat shows what it typed. You can also talk back to the agent from that same terminal: `nova-collar "what you want"` runs a turn on the same chats as the window. When the agent changes its working directory, the terminal follows. It is meant for frictionless system work — you and the agent at one prompt.
 
 ### The pack
 
-The bots are the pack. Each has a standing role, a voice, and one steer pack. Members on the same pack teach each other: a correction, or a failed step followed by a different step that worked, is kept for the others. Laya drops a lesson that does not belong to that pack, or that was already taught.
+The bots are the pack. Each has a standing role, a voice, and one steer pack. Members on the same pack share explicit user corrections and evidence-linked repairs. A repair lesson requires the same scope, changed source and equal-or-stronger passing verification; an unrelated successful step teaches nothing. Laya drops a lesson that does not belong to that pack, or that was already taught.
 
 The Pack is also where longer work goes, so the conversation keeps moving. You open the Pack and write a task — what needs doing, what done looks like, and who holds it — or you tell Nova Collar in the chat to take care of it. A task runs once, every minute, or every three minutes, until the goal is met. The board shows what is open, worked, and finished. Before a file is replaced, three older copies are kept. If you assigned the task, the Pack waits for you before it writes; if Nova Collar assigned it, the Pack keeps going until an overwrite or a delete, then waits. When the goal is met, the writeup lands in a chat named for that task.
 
@@ -155,7 +228,7 @@ For longer work in the conversation, `/goal` followed by an outcome sets a stand
 
 ## License and thanks
 
-Nova Collar is Apache-2.0, Copyright 2026 Hungry Nova Labs. The full terms are in [`LICENSE`](LICENSE), the attribution is in [`NOTICE`](NOTICE), and the same thanks — in plainer words — open from the name in the window's corner.
+Nova Collar is Apache-2.0, Copyright 2026 Hungry Nova Labs LLC. The full terms are in [`LICENSE`](LICENSE), the attribution is in [`NOTICE`](NOTICE), and the software credits open from the name in the window's corner.
 
 The window stands on other people's work, and the duty their licenses ask is small: keep their notices with any real copy.
 
@@ -169,12 +242,4 @@ The window stands on other people's work, and the duty their licenses ask is sma
 
 ## About Hungry Nova Labs
 
-Hungry Nova Labs works with private AI, Linux systems, hosting, and infrastructure. The reason behind that work is straightforward: build things that help people do something useful while keeping control over their data and the systems they depend on.
-
-Being able to talk to a computer naturally is a big step forward. Turning that conversation into working code, a solved problem, or something that makes someone's day easier is where the progress becomes meaningful. That is what I am building Hungry Nova Labs around — the infrastructure underneath a service and the tools people use to reach it, because a good interface needs a dependable system behind it, and a powerful system should be something people can actually use.
-
-The public face of that work is [hungrynovalabs.com](https://hungrynovalabs.com). Nova Access is one login for the private apps, portals, and AI you want kept out of a shared public cloud. We design it and we run it, and you can take it with you. You hold the keys. We don't keep a spare.
-
-Nova Collar is one part of that: a conversation brought closer to an outcome someone can inspect, understand, and use.
-
-**Own Your Data. Own Your Future.**
+Nova Collar is developed and maintained by Hungry Nova Labs LLC. Company information is available at [hungrynovalabs.com](https://hungrynovalabs.com).

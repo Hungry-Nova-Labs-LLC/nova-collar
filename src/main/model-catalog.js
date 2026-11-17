@@ -7,18 +7,35 @@ const catalogs = new Map();
 const pending = new Map();
 const attempts = new Map();
 const errors = new Map();
+const localCatalogs = new Map();
 const endpoint = (cfg) => String(cfg.chatUrl || "").replace(/\/+$/, "");
 // Scope discovery to the provider AND account without persisting a credential.
 const scope = (cfg) => createHash("sha256").update(JSON.stringify([endpoint(cfg), cfg.chatKey || cfg.toolsKey || ""])).digest("hex");
 const cacheKey = (cfg) => `${cfg.home}:${scope(cfg)}`;
 const file = (cfg) => join(cfg.home, "model-catalog.json");
 
+// A mixed service inventory may contain embedding models. Input modalities
+// such as text/image/audio do not make an embedding endpoint a chat model.
+export function isEmbeddingOnlyModel(row) {
+  const id = String(row?.id || row?.name || row?.model || row?.key || "").trim().toLowerCase();
+  const embeddingKinds = new Set(["embedding", "embeddings", "text-embedding", "text-embeddings", "feature-extraction"]);
+  if ([row?.type, row?.kind, row?.task].some(value => embeddingKinds.has(String(value || "").trim().toLowerCase().replaceAll("_", "-")))) return true;
+  const capabilities = row?.capabilities;
+  if (Array.isArray(capabilities)) {
+    const kinds = capabilities.map(value => String(value).toLowerCase());
+    if (kinds.some(value => embeddingKinds.has(value)) && !kinds.some(value => ["completion", "chat"].includes(value))) return true;
+  }
+  if (capabilities?.chat === false && (capabilities.embedding === true || capabilities.embeddings === true)) return true;
+  // Older local APIs and saved catalogs may omit model type/capabilities.
+  return /(?:^|[/_.:-])(?:embeddinggemma(?:[-_]?\d+)?|nomic[-_]embed(?:[-_]|$)|text[-_]embedding|mxbai[-_]embed|all[-_]minilm|bge[-_]|snowflake[-_]arctic[-_]embed|jina[-_]embeddings?)/.test(id);
+}
+
 export function catalogModels(body) {
   if (!Array.isArray(body?.data)) throw new Error("Invalid model catalog");
   const rows = new Map();
   for (const row of body.data) {
     const id = typeof row?.id === "string" ? row.id.trim() : "";
-    if (!id || id === "local-3.8" || id.length > 512 || /[\x00-\x1f\x7f]/.test(id)) continue;
+    if (!id || id === "local-3.8" || id.length > 512 || /[\x00-\x1f\x7f]/.test(id) || isEmbeddingOnlyModel(row)) continue;
     const description = String(row.description || "").slice(0, 1000);
     const tools = row.tool_call ?? row.capabilities?.tools;
     const context = Number(row.limit?.context);
@@ -93,6 +110,17 @@ export async function refreshCatalog(cfg, { force = false } = {}) {
 }
 
 export function modelMetadata(cfg, target) {
-  if (target.local) return null;
+  if (target.local) return localCatalogs.get(scope({chatUrl:target.url,chatKey:target.key || "ollama"}))?.find(row=>row.id === target.model) || null;
   return getCatalog({ ...cfg, chatUrl: target.url, chatKey: target.key, toolsKey: "" })?.models.find(row => row.id === target.model) || null;
+}
+
+// Local discovery is read-only and memory-scoped to the exact endpoint/account.
+// Credentials never appear in catalog rows, disk caches or public state.
+export function rememberLocalCatalog(url, apiKey, rows) {
+  const clean = rows.filter(row=>typeof row.id === "string" && !isEmbeddingOnlyModel(row)).map(row=>({
+    id:row.id,
+    ...(typeof row.tools === "boolean" ? {tools:row.tools} : {}),
+    ...(Number.isFinite(row.context) && row.context > 0 ? {context:row.context} : {}),
+  }));
+  localCatalogs.set(scope({chatUrl:url,chatKey:apiKey || "ollama"}),clean);
 }

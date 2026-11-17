@@ -1,5 +1,3 @@
-import { Client } from '@modelcontextprotocol/sdk/client/index.js';
-import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
 import { randomUUID } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, writeFileSync, realpathSync, statSync } from 'node:fs';
 import { isAbsolute, join, relative, resolve, sep } from 'node:path';
@@ -104,6 +102,13 @@ export class AnalysisManager {
     if (!['native', 'javascript'].includes(kind)) throw new Error('kind must be auto, native or javascript');
     const bundle = this.bundle();
     if (!bundle.ok) throw new Error(bundle.error);
+    signal?.throwIfAborted();
+    const [{ Client }, { StdioClientTransport }] = await Promise.all([
+      import('@modelcontextprotocol/sdk/client/index.js'),
+      import('@modelcontextprotocol/sdk/client/stdio.js'),
+    ]);
+    signal?.throwIfAborted();
+    if (this.stopping) throw new Error('Software analysis is shutting down.');
     const id = randomUUID();
     const directory = join(this.home, id);
     mkdirSync(directory, { recursive: true, mode: 0o700 });

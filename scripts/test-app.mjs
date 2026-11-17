@@ -1,10 +1,15 @@
 // Exercise the real Electron window and PTY without any model/GPU calls.
-import { app, BrowserWindow, dialog, shell } from "electron";
+import { app, BrowserWindow, clipboard, dialog, shell } from "electron";
 import assert from "node:assert/strict";
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
+
+// Fail visibly rather than blocking the fixture on Electron's native error dialog.
+for (const event of ["uncaughtException", "unhandledRejection"]) process.on(event, error => {
+  console.error(`APP_FIXTURE_${event}`, error); app.exit(1);
+});
 
 const home = mkdtempSync(join(tmpdir(), "nova-app-test-"));
 process.env.NOVAPUP_HOME = join(home, "settings");
@@ -38,6 +43,10 @@ try {
   await until(() => js('Boolean(window.pup && document.getElementById("approval-dialog"))'));
   const state = await js('window.pup.state()');
   assert.ok(state.localModels.some(m => m.model === "qwen3.8:27b"));
+  const beforeRetiredPreset = readFileSync(join(process.env.NOVAPUP_HOME, "env"), "utf8");
+  await assert.rejects(() => js('window.pup.useHostedPair()'), /retired model pair.*current catalog/);
+  assert.equal(readFileSync(join(process.env.NOVAPUP_HOME, "env"), "utf8"), beforeRetiredPreset,
+    "An old renderer cannot silently restore retired model IDs or split routing");
   await until(() => js(`window.pup.state().then(s => s.models.some(m => m.id === ${JSON.stringify(mimo)}))`));
   await js('document.getElementById("model-btn").click()');
   await until(() => js('document.getElementById("models-list").textContent.includes("MiMo V2.6 Flash")'));
@@ -47,8 +56,7 @@ try {
   await js('window.pup.refreshModels()');
   assert.ok((await js('window.pup.state()')).models.some(m => m.id === "brand-new-model"));
   await js('window.hidePanels()');
-  await js('Array.from(document.querySelectorAll("#setup-acts button")).find(b => b.textContent === "Skip").click()');
-  await until(() => js('document.getElementById("setup").hidden'));
+  assert.equal(await js('document.getElementById("setup").hidden'), true, "Explicit saved provider skips first-run setup");
   await js('window.pup.setupUse({url:"http://127.0.0.1:11434/v1",model:"custom:test"})');
   const analysisState = await js('window.pup.state()');
   assert(analysisState.packs.some(p => p.id === 'analysis'));
@@ -114,7 +122,7 @@ try {
   await js('document.getElementById("input").value = ""');
   const selected = await js('window.pup.state()');
   assert.equal(selected.localModel, "custom:test");
-  const { readTerminal, sendTerminal } = await import("../src/main/term-bridge.js");
+  const { closeTerminal, readTerminal, sendTerminal } = await import("../src/main/term-bridge.js");
   const marker = "NOVA_PTY_" + Date.now();
   const command = process.platform === "win32" ? `Write-Output ('${marker.slice(0,9)}' + '${marker.slice(9)}')` : `printf '%s%s\\n' '${marker.slice(0,9)}' '${marker.slice(9)}'`;
   assert.equal(sendTerminal(command).ok, true);
@@ -135,12 +143,49 @@ try {
     assert.equal(readFileSync(file,"utf8"), allowed ? "" : original);
     await until(() => js('!document.getElementById("approval-dialog").open'));
   }
+  // Electron 45 clipboard writes are asynchronous. Exercise the real IPC while
+  // mocking the native writer so the user's actual clipboard remains untouched.
+  const originalClipboardWrite = clipboard.writeText;
+  try {
+    let finishCopy, copied, copyReturned = false;
+    clipboard.writeText = text => { copied = text; return new Promise(resolve => { finishCopy = resolve; }); };
+    const copy = js('window.pup.copyText("synthetic clipboard fixture")').then(result => { copyReturned = true; return result; });
+    await until(() => Boolean(finishCopy));
+    await delay(20);
+    assert.equal(copyReturned, false, "copy success must wait for the native write to finish");
+    assert.equal(copied, "synthetic clipboard fixture");
+    finishCopy();
+    assert.deepEqual(await copy, { ok: true });
+    clipboard.writeText = async text => { copied = text; };
+    assert.deepEqual(await js('window.pup.copyText(null)'), { ok: true });
+    assert.equal(copied, "");
+    assert.deepEqual(await js('window.pup.copyText("x".repeat(100001))'), { ok: true });
+    assert.equal(copied.length, 100000);
+    clipboard.writeText = async () => { throw Error("synthetic private clipboard failure"); };
+    assert.deepEqual(await js('window.pup.copyText("synthetic clipboard fixture")'), { ok: false, error: "Could not copy text." });
+  } finally { clipboard.writeText = originalClipboardWrite; }
   assert.equal(await js('document.documentElement.scrollWidth <= innerWidth'), true, "window must not overflow horizontally");
-  console.log(`PASS ${process.platform}: Electron window, model picker, analysis/Ghidra/Wireshark packs, capture picker, real MCP status, separate network tool cards, licenses, native PTY, approval deny/allow, empty write, layout`);
+  // Keep the main process alive briefly after destroying the real window, then
+  // exercise the same native PTY callback that previously raised a modal error.
+  const holdQuit = event => event.preventDefault();
+  app.prependListener("before-quit", holdQuit);
+  try {
+    win.destroy();
+    assert.equal(win.isDestroyed(), true);
+    const lateMarker = "NOVA_LATE_PTY_" + Date.now();
+    const lateCommand = process.platform === "win32"
+      ? `Write-Output ('${lateMarker.slice(0,9)}' + '${lateMarker.slice(9)}')`
+      : `printf '%s%s\\n' '${lateMarker.slice(0,9)}' '${lateMarker.slice(9)}'`;
+    assert.equal(sendTerminal(lateCommand).ok, true);
+    await until(() => readTerminal().includes(lateMarker));
+    await delay(100); // Let the real32ms terminal-flush callback observe teardown.
+  } finally { app.removeListener("before-quit", holdQuit); }
+  assert.equal((await closeTerminal()).ok,true,"the app-owned native PTY must exit before the test process quits");
+  console.log(`PASS ${process.platform}: Electron window, model picker, analysis/Ghidra/Wireshark packs, capture picker, real MCP status, separate network tool cards, licenses, native PTY, approval deny/allow, empty write, layout, late native PTY after window teardown`);
   clearTimeout(deadline);
-  // All assertions are complete. Windows' native PTY can keep graceful
-  // Electron shutdown pending, so explicitly terminate this test process.
-  app.exit(0);
+  // Exercise normal shutdown too: the main process closes only its own PTY,
+  // analysis helpers and network client before allowing Electron to quit.
+  app.quit();
 } catch (error) { console.error(error); clearTimeout(deadline); app.exit(1); }
 
 }
