@@ -4,13 +4,13 @@ Nova Collar is the desktop agent harness from Hungry Nova Labs LLC. One Electron
 
 ## Install
 
-**Current version: 0.6.0.** The [workspace notes](docs/WORKSPACE-UPGRADE.md) cover the new desktop layout, public-source boundaries, and local verification.
+**Current version: 0.6.1.** The [workspace notes](docs/WORKSPACE-UPGRADE.md) cover the new desktop layout, public-source boundaries, and local verification.
 
 The [Nova Tag integration notes](docs/TAG-INTEGRATION.md) describe bounded capacity waiting, observed progress, exact local history recall and explicit model settings. The [completion notes](docs/AUTONOMOUS-COMPLETION.md) describe verification, loop control and latency fixes in this iteration.
 
 **Public baseline.** Brings the [Hungry Nova Labs methodology](docs/HNL-METHODOLOGY.md) into the public harness: ordered saved guidance, deliberate questions, durable file/project verification, scoped repair lessons, bounded helpers, checkpoints and context budgeting. See the [implementation and limits](docs/PORTING-STATUS.md). Includes the [Wireshark MCP suite](docs/wireshark.md) for bounded traffic capture, local device discovery, anomaly evidence and opening captures in Wireshark, with visible tool calls and action approvals. Wireshark/TShark and optional Nmap are separately installed.
 
-**The Mac app.** Download `Nova-Collar-0.6.0-arm64.zip` from [v0.6.0](https://github.com/Hungry-Nova-Labs-LLC/nova-collar/releases/tag/v0.6.0), open the archive, drag Nova Collar to Applications, and open it. The ZIP contains the signed app with its stapled notarization ticket and neutral archive metadata. It is for Apple Silicon Macs with a declared macOS 13.5 minimum and includes the analysis engines. Runtime tests ran on the current Mac; the macOS 13.5 deployment targets were checked by compilation and native metadata inspection. See the release's verification receipt for the tested package and limits. The obsolete v0.2.0 downloads remain withdrawn. Earlier Windows x64 builds remain available; see below.
+**The Mac app.** Download `Nova-Collar-0.6.1-arm64.zip` from [v0.6.1](https://github.com/Hungry-Nova-Labs-LLC/nova-collar/releases/tag/v0.6.1), open the archive, drag Nova Collar to Applications, and open it. The ZIP contains the signed app with its stapled notarization ticket and neutral archive metadata. It is for Apple Silicon Macs with a declared macOS 13.5 minimum and includes the analysis engines. Runtime tests ran on the current Mac; the macOS 13.5 deployment targets were checked by compilation and native metadata inspection. See the release's verification receipt for the tested package and limits. The obsolete v0.2.0 downloads remain withdrawn. Earlier Windows x64 builds remain available; see below.
 
 To build it yourself from the checkout:
 
@@ -80,6 +80,30 @@ If nothing is found, start the model server and choose **Scan again**, enter a
 local address and model ID, or choose another provider. Installing Ollama or
 downloading a model requires an explicit action. Nova Collar does not read
 Ollama's or LM Studio's private configuration files.
+
+## Optional local adviser
+
+After connecting your chat model, choose **Install free local adviser** to add
+d1-Omni-2B, or **Maybe later** to continue. You can return through
+**Settings → local decision adviser**. Nova downloads about 1.85 GB from the
+Hungry Nova Labs GitHub release, verifies the complete file and checks a small
+sample decision on your computer before turning the adviser on. There is no
+separate model account, API key, Python setup or server command. Downloads show
+progress and can be cancelled and resumed. The model stays installed across app
+updates; turning the adviser off keeps it for later.
+
+The bundled local runtime is currently offered on Apple Silicon Macs. Other
+platforms show a clear unavailable message and can continue with their selected
+chat provider. The adviser supplements your connected chat model: after a local
+coding check fails, it can suggest a permitted next step. Its advice can be wrong.
+The existing tool permissions, source checks and completion requirements remain
+in force. The model unloads when idle and stops when Nova Collar quits.
+
+The model is redistributed under the [LFM Open License](data/licenses/d1-Omni-LICENSE.txt).
+Liquid AI permits [free model downloads](https://www.liquid.ai/lfm-license);
+downstream commercial use remains subject to its $10 million annual-revenue
+condition. Training Lab and model training are separate and are never enabled
+by this installation.
 
 ## Keep working in the same conversation
 

@@ -1,0 +1,14 @@
+{
+  "schemaVersion": 1,
+  "model": {
+    "id": "d1-Omni-2B-Q8_0",
+    "file": "d1-Omni-2B-Q8_0.gguf",
+    "url": "https://github.com/Hungry-Nova-Labs-LLC/nova-collar/releases/download/decision-models-1/d1-Omni-2B-Q8_0.gguf",
+    "bytes": 1846241184,
+    "sha256": "aedf1a7c341b4281979423dbc39e9c3d3ad1da8834156c8e75af5399ca3b0861",
+    "upstream": "LiquidAI/d1-Omni-2B-GGUF",
+    "revision": "36707287af55fc9ab03e34bda6a6cc82075499b1",
+    "license": "LFM Open License v1.0"
+  },
+  "platforms": ["darwin-arm64"]
+}

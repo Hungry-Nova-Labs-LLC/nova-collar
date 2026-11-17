@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.6.1 — Guided local decision adviser
+
+- Offer an optional free d1-Omni-2B adviser during setup and in Settings, with two clear initial choices and no model account, Python setup or terminal commands.
+- Download the pinned Q8 model from the Hungry Nova Labs GitHub release with readable progress, cancellation, resumable partial downloads and exact byte/hash verification. Keep the model across app updates.
+- Bundle the compatible local runtime on Apple Silicon; verify a real local sample decision before enabling the adviser. Stop owned model processes on cancellation and app exit, and unload idle inference. Other installer platforms are not newly validated by this release.
+- Preserve the selected chat provider and existing profiles. Adviser suggestions remain untrusted and cannot grant permissions, execute actions, clear verification debt or declare completion.
+- Retain Liquid AI’s model license and attribution. The model remains subject to the LFM Open License, including its commercial-use threshold.
+- No training service or Training Lab is enabled by installing the adviser.
+
 ## 0.6.0 — Main application update
 
 - Add recovery points, session-history retrieval, context inspection, and verification records. Restoring recorded files opens a new chat and keeps the original history available; it does not reverse external actions.

@@ -1,0 +1,115 @@
+{
+  "schemaVersion": 1,
+  "platform": "darwin-arm64",
+  "version": "b11960",
+  "revision": "8642541b255bfb5dc39cd351a178be09013a55d6",
+  "executable": "llama-server",
+  "minimumMacOS": "13.3",
+  "archive": {
+    "url": "https://github.com/ggml-org/llama.cpp/releases/download/b11960/llama-b11960-bin-macos-arm64.tar.gz",
+    "bytes": 16465074,
+    "sha256": "58e5a5e1d7c2bf66cedd9c29e0323f3e570660a70a1e2156d32eed08f4cc1e3c",
+    "prefix": "llama-b11960"
+  },
+  "files": [
+    {
+      "path": "llama-server",
+      "bytes": 49984,
+      "sha256": "3d81b7997317e5ffd13ed3ba32436658e0f4067172cea3674b4215b39d4635be"
+    },
+    {
+      "path": "libllama-server-impl.dylib",
+      "bytes": 9772376,
+      "sha256": "547484dc42c70dd337e9dc2a5b86e077d747f344f929765707d556cf13b2e51e"
+    },
+    {
+      "path": "libllama-common.0.dylib",
+      "bytes": 8025192,
+      "sha256": "61f79ca46fe1d4b3faafa557e323412b39ce0f09aff9943b784494637ce18d30"
+    },
+    {
+      "path": "libmtmd.0.dylib",
+      "bytes": 1620512,
+      "sha256": "a4f48b67ab510c2b516a1be7e1bd09552e80ae23b701e1ea71cde382688c179b"
+    },
+    {
+      "path": "libllama.0.dylib",
+      "bytes": 3654016,
+      "sha256": "e20dcf1d00324fc1fb336259462dfcaaf1d314dd7adced2cfce774226584d7af"
+    },
+    {
+      "path": "libggml.0.dylib",
+      "bytes": 60016,
+      "sha256": "c3830dd10717fdf15bd9762a8a31598b0b71a5d7ab6623c0c43793676c54ac0d"
+    },
+    {
+      "path": "libggml-cpu.0.dylib",
+      "bytes": 941200,
+      "sha256": "6ff144943afbe691eb3e774d8ee6333cd1bffaade6f4bf67b73da4ad3325789a"
+    },
+    {
+      "path": "libggml-blas.0.dylib",
+      "bytes": 58776,
+      "sha256": "505df04b85bf698d39dc18c4fa6256333d1cba44e7339505cdbd1a647db3c603"
+    },
+    {
+      "path": "libggml-metal.0.dylib",
+      "bytes": 5620936,
+      "sha256": "8b3bb1b49678c8c65d35f64dbb991bc8280608676a0b9a0a8c3acd533ec1437e"
+    },
+    {
+      "path": "libggml-rpc.0.dylib",
+      "bytes": 242800,
+      "sha256": "3dc8d8445eb8125293360a4c094a46fa36c42f5fa447500c5f27bf2cb7de02a4"
+    },
+    {
+      "path": "libggml-base.0.dylib",
+      "bytes": 751896,
+      "sha256": "f429c6bfe8ebda5c03dce2d5cc0408821c48ec44b6ce3dd02ebd5083dbcd7745"
+    }
+  ],
+  "licenses": [
+    {
+      "source": "data/licenses/decision-runtime-cpp-httplib-LICENSE.txt",
+      "path": "licenses/cpp-httplib-LICENSE.txt",
+      "bytes": 1075,
+      "sha256": "4b45cbe16d7b71b89ae6127e26e0d90a029198ca5e958ad8e3d0b8bbed364d8b"
+    },
+    {
+      "source": "data/licenses/decision-runtime-jsonhpp-LICENSE.txt",
+      "path": "licenses/jsonhpp-LICENSE.txt",
+      "bytes": 1075,
+      "sha256": "c0d068392ea65358b798b8c165103560f06e9e3b38c4ab4e2d8810a7b931af86"
+    },
+    {
+      "source": "data/licenses/decision-runtime-llama.cpp-LICENSE.txt",
+      "path": "licenses/llama.cpp-LICENSE.txt",
+      "bytes": 1078,
+      "sha256": "94f29bbed6a22c35b992c5c6ebf0e7c92f13b836b90f36f461c9cf2f0f1d010d"
+    },
+    {
+      "source": "data/licenses/decision-runtime-rotate-bits-LICENSE.txt",
+      "path": "licenses/rotate-bits-LICENSE.txt",
+      "bytes": 1088,
+      "sha256": "ca0b44aec101afb6b46f4c39b23369fa06a64fb9c0add37c2689d702156fee55"
+    },
+    {
+      "source": "data/licenses/decision-runtime-sha256-LICENSE.txt",
+      "path": "licenses/sha256-LICENSE.txt",
+      "bytes": 41,
+      "sha256": "b81d0022ca6367918c67b57e9647d3513ee58809fd4b0ef0b3492f1356bced25"
+    },
+    {
+      "source": "data/licenses/decision-runtime-xxhash-LICENSE.txt",
+      "path": "licenses/xxhash-LICENSE.txt",
+      "bytes": 1389,
+      "sha256": "6ffedbc0f7878612d2b23589f1ff2ab15633e1df7963a5d9fc750ec5500c7e7a"
+    },
+    {
+      "source": "data/licenses/d1-Omni-LICENSE.txt",
+      "path": "licenses/d1-Omni-LICENSE.txt",
+      "bytes": 10574,
+      "sha256": "4d28ca14dedc0b3d0fcc2b3339f0e79931faa33874f3d24f522183a8fc70068c"
+    }
+  ]
+}

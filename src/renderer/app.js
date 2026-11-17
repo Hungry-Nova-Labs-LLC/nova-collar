@@ -982,6 +982,7 @@ async function boot() {
   else add("assistant", "Ready for your message.");
   paintConversation(state.conversation);
   if (!state.ready || (!state.setupDone && !state.hasExplicitConnection)) window.openSetup?.(state.setupReport);
+  else window.maybeOfferDecisionSetup?.(state);
 }
 
 sendBtn.onclick = () => send();
@@ -1181,6 +1182,7 @@ wakeBtn.onclick = async () => {
     showModel(next.model, next.models, next.split);
     renderModels(next);
     add("assistant", "Provider saved. The next message will test the connection.");
+    window.maybeOfferDecisionSetup?.(next);
   } else {
     wakeNote.textContent = "Still not connected. Check the key and address.";
   }
@@ -1347,6 +1349,7 @@ window.afterSetup = (state) => {
   if (!state) return;
   wake.hidden = state.ready;
   showModel(state.model, state.models, state.split);
+  window.maybeOfferDecisionSetup?.(state);
 };
 
 function paintVoices(voices, current = "") {

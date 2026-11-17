@@ -155,6 +155,85 @@
   font-size: 12px;
 }
 
+/* Optional adviser: a separate step after the primary chat connection. */
+.decision-setup {
+  inset: 0;
+  width: min(560px, calc(100vw - 32px));
+  height: fit-content;
+  max-height: calc(100vh - 64px);
+  margin: auto;
+  padding: 24px;
+  gap: 14px;
+  outline: none;
+}
+
+.decision-setup .setup-acts { margin-top: 8px; }
+.decision-setup .decision-status:empty { display: none; }
+
+.decision-setup .decision-model {
+  align-self: flex-start;
+  max-width: 100%;
+  padding: 6px 10px;
+  border-radius: var(--r-pill);
+  color: var(--glow);
+  background: var(--tint);
+  font: 600 11px/1.4 var(--chrome);
+  overflow-wrap: anywhere;
+}
+
+.decision-setup :is(.decision-detail, .decision-license) {
+  color: var(--quiet);
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+.decision-setup .decision-status {
+  color: var(--voice);
+  font-size: 12px;
+}
+
+.decision-license button {
+  display: inline;
+  padding: 0;
+  color: var(--glow);
+  font: inherit;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.decision-progress {
+  display: grid;
+  gap: 7px;
+  max-width: 440px;
+}
+
+.decision-progress progress {
+  width: 100%;
+  height: 10px;
+  border: 0;
+  border-radius: var(--r-pill);
+  accent-color: var(--glow);
+}
+
+.decision-progress p {
+  color: var(--quiet);
+  font: 11px/1.4 var(--chrome);
+}
+
+.decision-setup .setup-acts button {
+  min-height: 36px;
+  height: auto;
+  padding: 8px 13px;
+  text-align: center;
+  white-space: normal;
+}
+
+@media (max-width: 480px) {
+  .decision-setup { padding: 16px 14px; }
+  .decision-setup h1 { font-size: 25px; }
+  .decision-setup .setup-acts { flex-direction: column; align-items: stretch; }
+}
+
 /* Spec: a document editor that takes the chat's place. */
 #spec {
   display: flex;

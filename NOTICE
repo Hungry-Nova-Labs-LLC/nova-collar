@@ -19,3 +19,12 @@ and provenance.
 Optional lexical source observations use Acorn 8.19.0 (MIT), eslint-scope 8.4.0,
 esrecurse 4.3.0 and estraverse 5.3.0 (BSD-2-Clause). Their unmodified notices
 and licenses are reproduced in data/licenses/runtime-reference-libraries.txt.
+
+The optional local decision adviser uses Liquid AI d1-Omni-2B weights under
+the LFM Open License v1.0, included in data/licenses/d1-Omni-LICENSE.txt and
+the bundled runtime's licenses directory. Weights are a separate optional
+download; their terms, including the commercial-use condition, remain in force.
+The bundled llama.cpp runtime is MIT-licensed, copyright its contributors.
+Its original license and pinned upstream provenance are retained with the
+runtime. Hungry Nova Labs supplies the download and application integration;
+no upstream endorsement is implied.

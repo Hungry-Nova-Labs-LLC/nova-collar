@@ -27,3 +27,5 @@ work/
 *.pcapng
 *.cap
 *.report.json
+
+/vendor/decision-runtime/

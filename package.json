@@ -1,6 +1,6 @@
 {
   "name": "nova-collar",
-  "version": "0.6.0",
+  "version": "0.6.1",
   "license": "Apache-2.0",
   "private": true,
   "description": "Nova Collar \u2014 Hungry Nova Labs agent window: chat, terminal, this system",
@@ -112,6 +112,10 @@
         {
           "from": "bin/mac-control",
           "to": "mac-control"
+        },
+        {
+          "from": "vendor/decision-runtime/darwin-${arch}",
+          "to": "decision-runtime"
         }
       ],
       "target": [
@@ -132,7 +136,7 @@
       },
       "minimumSystemVersion": "13.5",
       "notarize": false,
-      "sign": "scripts/sign-mac-code.cjs"
+      "sign": "scripts/sign-mac-code-with-decision-runtime.cjs"
     },
     "win": {
       "icon": "build/icon.ico",

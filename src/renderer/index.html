@@ -104,6 +104,11 @@
           <strong>settings</strong>
           <button type="button" class="sheet-x" title="Close" aria-label="Close">×</button>
         </div>
+        <section id="decision-local-settings" aria-labelledby="decision-local-settings-title">
+          <p class="sheet-sub" id="decision-local-settings-title">local decision adviser</p>
+          <p class="sheet-note" id="decision-local-summary">Optional help choosing a next step after a failed check.</p>
+          <div class="packs"><button type="button" id="decision-local-open">Set up local adviser</button></div>
+        </section>
         <p class="sheet-sub">context</p>
         <p class="sheet-note">Inspect the last model request or make a fresh local preview. Counts and source paths only; no model request or memory search.</p>
         <div class="packs"><button type="button" id="context-last">last request</button><button type="button" id="context-next">next preview</button></div>
@@ -326,6 +331,20 @@
         <footer><button type="submit" id="question-submit" disabled>Send answer</button></footer>
       </form>
     </dialog>
+    <section class="setup decision-setup" id="decision-setup" role="dialog" aria-modal="true" aria-labelledby="decision-setup-title" aria-describedby="decision-setup-body" tabindex="-1" hidden>
+      <p class="setup-kicker" id="decision-setup-kicker">Optional · recommended</p>
+      <h1 id="decision-setup-title">A little help with the next step</h1>
+      <p id="decision-setup-body"></p>
+      <p class="decision-model">d1-Omni-2B · local decision adviser</p>
+      <p class="decision-detail" id="decision-setup-detail"></p>
+      <div class="decision-progress" id="decision-progress-wrap" hidden>
+        <progress id="decision-progress" max="100" aria-label="Local adviser installation"></progress>
+        <p id="decision-progress-text" role="status" aria-live="polite"></p>
+      </div>
+      <p class="decision-status" id="decision-setup-status" role="status" aria-live="polite"></p>
+      <p class="decision-license">Free under Liquid AI’s LFM Open License. Commercial use has a $10M annual-revenue threshold. <button type="button" id="decision-local-license">Model license</button></p>
+      <div class="setup-acts" id="decision-setup-acts"></div>
+    </section>
     <div class="setup" id="setup" hidden>
       <div class="setup-orb" aria-hidden="true"></div>
       <p class="setup-kicker" id="setup-kicker"></p>
@@ -394,6 +413,7 @@
     <script src="steps.js"></script>
     <script src="credits.js"></script>
     <script src="setup-ui.js"></script>
+    <script src="decision-setup-ui.js"></script>
     <script src="crew-render.js"></script>
     <script src="app.js"></script>
     <script src="context-ui.js"></script>

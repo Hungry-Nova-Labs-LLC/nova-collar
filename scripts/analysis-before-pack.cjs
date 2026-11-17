@@ -5,6 +5,9 @@ const { assertReleaseSource } = require('./release-source-preflight.cjs');
 exports.default = async context => {
   assertPinnedSecurityDependencies(context.packager.projectDir);
   assertReleaseSource(context.packager.projectDir);
+  execFileSync(process.execPath, [join(context.packager.projectDir, 'scripts/prepare-decision-runtime.mjs'),
+    '--platform', context.electronPlatformName, '--arch', Arch[context.arch]],
+  { cwd: context.packager.projectDir, stdio: 'inherit' });
   execFileSync(process.execPath, [join(context.packager.projectDir, 'scripts/prepare-analysis.mjs'),
     '--platform', context.electronPlatformName, '--arch', Arch[context.arch]],
   { cwd: context.packager.projectDir, stdio: 'inherit' });

@@ -1,0 +1,23 @@
+Optional local decision runtime
+
+Nova Collar bundles the required Apple Silicon native files from the official
+ggml-org/llama.cpp b11960 release, source revision
+8642541b255bfb5dc39cd351a178be09013a55d6.
+
+llama.cpp is distributed under its MIT license. The original license and the
+applicable upstream dependency notices are retained beside the bundled runtime
+and in this application's data/licenses directory. They cover llama.cpp,
+nlohmann/json, cpp-httplib, rotate-bits, SHA-256 and xxHash.
+
+Upstream binary aliases are materialized as ordinary files with identical
+content. The application build removes native debug metadata and applies its
+code signature; the original upstream hashes remain in source provenance, and
+the sealed application runtime manifest records the final signed file hashes.
+
+Upstream source and binary release:
+https://github.com/ggml-org/llama.cpp/tree/8642541b255bfb5dc39cd351a178be09013a55d6
+https://github.com/ggml-org/llama.cpp/releases/tag/b11960
+
+The optional LiquidAI d1-Omni-2B model has a separate license: the exact LFM
+Open License v1.0 is included as d1-Omni-LICENSE.txt. This runtime notice does
+not replace or expand the model license.

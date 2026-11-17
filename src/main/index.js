@@ -38,6 +38,8 @@ import { completeSpec, readSpec, writeSpec } from "./spec.js";
 import { refreshCatalog } from "./model-catalog.js";
 import { cleanModelHistory } from "./model-history.js";
 import { acknowledgeRecoveryOperation, recoverSession, recoveryOperations, recoveryPointSummaries } from "./recovery-points.js";
+import * as decisionLocal from "./decision-local.js";
+import { registerDecisionLocalIpc } from "./decision-local-ipc.js";
 
 const pty = createRequire(import.meta.url)("node-pty");
 
@@ -72,6 +74,15 @@ function fromWindow(event) {
   return Boolean(win && !win.isDestroyed() && event?.sender === win.webContents);
 }
 setApprovalNotifier(send);
+registerDecisionLocalIpc({ ipcMain, fromWindow, api: decisionLocal, send,
+  openLicense: async () => {
+    const license = app.isPackaged
+      ? join(process.resourcesPath, "decision-runtime/licenses/d1-Omni-LICENSE.txt")
+      : join(here, "../../data/licenses/d1-Omni-LICENSE.txt");
+    const error = await shell.openPath(license);
+    return { ok: !error, ...(error ? { error: "The model license could not be opened." } : {}) };
+  },
+});
 
 function boundsPath() {
   return join(APP_HOME, "window.json");
@@ -485,7 +496,7 @@ app.on("before-quit", event => {
   if (!quitReady) {
     event.preventDefault();
     if (!quitCleanup) {
-      const pending = [closeTerminal()];
+      const pending = [closeTerminal(), decisionLocal.stopDecisionLocal()];
       if (analysisManager.sessions.size) pending.push(analysisManager.closeAll());
       if (networkRuntime.client || networkRuntime.connecting) pending.push(networkRuntime.close());
       quitCleanup = Promise.allSettled(pending).finally(()=>{

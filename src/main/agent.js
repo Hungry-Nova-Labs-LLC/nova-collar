@@ -18,6 +18,7 @@ import {createDraftRecovery, enforceScratchDraftBudget, scratchDraftPolicy, scra
 import {handoffFormatObservation} from "./handoff-format.js";
 import {createNewPathProbe} from "./new-path-probe.js";
 import { createContractReviewer, contractReviewObservation } from "./contract-review.js";
+import { createDecisionAdviser, decisionAdviceObservation } from "./decision-adviser.js";
 import { commandDiagnostic, submittedPythonFailureObservation, assertionFailureRepairObservation } from "./command-diagnostic.js";
 import { missingFileRecovery, recoveryCallMatches } from "./implementation-recovery.js";
 import { createExistingEditBridge, existingEditCallMatches, existingEditRequestTools } from "./existing-edit-recovery.js";
@@ -1093,6 +1094,8 @@ export async function runTurn(history, rawText, emit, signal, extra = {}) {
   const seen = new Map();
   const failed = new Set();
   const turnProgress = createTurnProgress(gate.progressState?.());
+  const decisionAdviser = createDecisionAdviser({ home: APP_HOME, cfg, redact: redactSecrets, denyPath: denySecretPath,
+    ...(extra.requestDecisionAdvice ? { request: extra.requestDecisionAdvice } : {}) });
   const verificationOpportunity = createVerificationOpportunity({cwd:getWorkdir(),ask:userText});
   let pendingVerificationOpportunity = null;
   const verificationOptions = () => ({cwd:getWorkdir(), local:!remote && extra.remote !== true && !extra.bot && (!extra.role || extra.role === "term"),
@@ -1159,6 +1162,7 @@ export async function runTurn(history, rawText, emit, signal, extra = {}) {
     return /^(?:host_file_read|host_facts|host_disk|host_listen_ports|host_processes|host_service_status|net_report|context_info|context_recall|discover_tools|list_skills|read_skill|project_memory_search|project_lookup|ask_user|set_workdir|mac_screenshot|computer_screenshot|computer_read|web_search|extract|scrape|docs_search)$/.test(name);
   };
   const applyHumanStage = (content) => {
+    decisionAdviser.invalidate();
     // Any human steering invalidates this automatic target choice. Resume with
     // ordinary planning; never force a stale file action after an answer.
     pendingMutationRecovery = null;
@@ -1265,6 +1269,8 @@ export async function runTurn(history, rawText, emit, signal, extra = {}) {
         messages.push({ role: "assistant", content: initial.context });
         for (const args of queuedSnapshots) {
           gate.note(...args);
+          decisionAdviser.observe({ name: "host_file_read", rawArgs: args[1], result: args[2], cwd,
+            completeRead: args[2]?.read?.completeFile === true && !args[2]?.text_truncated });
           // The bounded reader already validated this requested geometry; its
           // canonical result path may spell a cwd alias differently (/var).
           if (args[2]?.ok && args[2]?.path) preloadedSourceReads.push({ path: expandPath(args[1]?.path || args[2].path, cwd), bytes: args[2].bytes,
@@ -2033,6 +2039,7 @@ export async function runTurn(history, rawText, emit, signal, extra = {}) {
         fileBytes: /^(host_file_read|host_file_write|host_file_edit|computer_read|computer_write)$/.test(name) ? result?.bytes : undefined,
         ...(name === "host_file_read" ? { sourceCompleteRead } : {}),
       });
+      decisionAdviser.observe({ name, rawArgs: callArgs, result, blocked: Boolean(blocked), cwd: getWorkdir(), completeRead: sourceCompleteRead });
       const want = wantedTools(userText, history);
       if (!goal && want.includes(name) && answerFromAsk(userText, trail)) {
         halt = "write the result from the tool that worked";
@@ -2063,6 +2070,33 @@ export async function runTurn(history, rawText, emit, signal, extra = {}) {
     progress();
     if (await incorporate()) halt = "";
     if (halt) break;
+    // A whole native tool batch is settled before this optional observation.
+    // It receives no executor, proof, goal or permission mutation capability.
+    const adviceContext = () => ({ eligible: editTask && !editsSuspended && !remote && extra.remote !== true && !extra.bot
+      && (!extra.role || extra.role === "term"), ask: scratchUserScope, goal, cwd: getWorkdir(),
+      stage: editsSuspended ? "review" : "edit", revision: turnProgress.revision, sourceState: gate.progressState?.() || [],
+      tools: (callExtra.tools || offered || []).map(tool => realToolName(tool.function?.name || tool.name)) });
+    if (decisionAdviser.enabled && turnBudget.optionalAvailable()) {
+      let advice = null;
+      try {
+        advice = await turnBudget.run(({ signal: adviceSignal, timeoutMs }) => decisionAdviser.advise({ ...adviceContext(), signal: adviceSignal, timeoutMs }), { signal, optional: true });
+      } catch (error) {
+        if (signal?.aborted || error?.name === "AbortError") throw error;
+        if (!isTurnBudgetError(error)) throw error;
+      }
+      // Actual owner steering always precedes/discards a buffered model opinion.
+      await incorporate();
+      if (advice) {
+        const current = decisionAdviser.current(advice, adviceContext());
+        emit({ type: "decision_advice", advisory: true, status: current ? advice.status : "discarded",
+          ...(current && advice.choice ? { choice: advice.choice } : {}),
+          ...(!current ? { reason: "superseded" } : advice.reason ? { reason: advice.reason } : {}), elapsedMs: advice.elapsedMs });
+        if (current && advice.status === "completed") {
+          messages.push({ role: "user", content: decisionAdviceObservation(advice.choice) });
+          progress();
+        }
+      }
+    }
   }
   // Settle the last completed tool's project revision before constructing a
   // fallback prompt or snapshotting debt for its handoff.
