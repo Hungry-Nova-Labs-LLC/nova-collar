@@ -1,0 +1,9 @@
+Qwen3.5 local chat models
+
+Upstream model weights: Copyright 2026 Alibaba Cloud. Licensed under the Apache License, Version 2.0.
+Original model repositories: https://huggingface.co/Qwen/Qwen3.5-2B, https://huggingface.co/Qwen/Qwen3.5-4B, https://huggingface.co/Qwen/Qwen3.5-9B.
+
+GGUF quantizations are published by Unsloth AI at https://huggingface.co/unsloth.
+The local chat catalog identifies each exact Unsloth revision, file size and SHA256.
+Hungry Nova Labs does not train or modify these model weights through this download feature.
+The upstream license text, including its Alibaba Cloud attribution, is retained in Qwen3.5-APACHE-2.0.txt.

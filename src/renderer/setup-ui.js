@@ -36,7 +36,7 @@
         const item=button(`${hit.name} · API key required`,()=>manual(hit.url));item.className="chat-item";list.append(item);
       }
     }
-    title.textContent=count?"Choose a model":"Connect a model server";
+    title.textContent=count?"Choose a model":window.pup.localChatStatus?"Choose how to use Nova Collar":"Connect a model server";
     body.textContent=report?.error || report?.decision?.error || (count
       ? "Choose the model to use. Already loaded models are marked. Your choice is saved on this computer."
       : report?.found?.some(hit=>hit.authRequired)
@@ -44,11 +44,21 @@
         : report?.found?.length
           ? "A server is running, but no chat model is available. Load a chat model in Ollama or LM Studio, then scan again."
           : "Start your model server, then scan again. You can also enter a local server address or choose another provider.");
-    acts.append(button("Scan again",scan),button("Connect manually",()=>manual()),button("Choose another provider",skip));
+    if(window.pup.localChatStatus) {
+      if(!count && !report?.error && !report?.decision?.error) body.textContent="Download a chat model to use on this computer, or connect a model you already use. Your connection settings stay private.";
+      acts.append(button("Download a chat model",()=>window.openLocalChatSetup?.({fromSetup:true}),true),button("Connect a model I already use",skip));
+    }
+    const more=document.createElement("details");more.id="setup-more-options";more.className="setup-more-options";
+    const summary=document.createElement("summary");summary.textContent="More connection options";more.append(summary);
+    const options=document.createElement("div");options.className="setup-acts";
+    options.append(button("Scan again",scan),button("Connect manually",()=>manual()));
+    if(window.pup.localChatStatus)options.append(button("Open a GGUF file",()=>window.openLocalChatSetup?.({fromSetup:true,importFile:true})));
+    else options.append(button("Choose another provider",skip));
     const memory=report?.memory;
     if(!count && memory?.model && memory.platform!=="win32") {
-      acts.append(button(`Install Ollama and download ${memory.model.name} (${memory.model.diskGb} GB)`,install));
+      options.append(button(`Install Ollama and download ${memory.model.name} (${memory.model.diskGb} GB)`,install));
     }
+    more.append(options);acts.append(more);
   }
   function field(label,type,value="") {
     const wrap=document.createElement("label");wrap.textContent=label;

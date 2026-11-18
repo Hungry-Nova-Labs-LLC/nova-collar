@@ -77,6 +77,7 @@ export function catalogState(cfg) {
 }
 
 export async function refreshCatalog(cfg, { force = false } = {}) {
+  if (cfg.managedChat) return getCatalog(cfg);
   if (!cfg.chatUrl) return null;
   const key = cacheKey(cfg);
   if (pending.has(key)) return pending.get(key);
@@ -110,6 +111,7 @@ export async function refreshCatalog(cfg, { force = false } = {}) {
 }
 
 export function modelMetadata(cfg, target) {
+  if (target.managedMetadata) return target.managedMetadata;
   if (target.local) return localCatalogs.get(scope({chatUrl:target.url,chatKey:target.key || "ollama"}))?.find(row=>row.id === target.model) || null;
   return getCatalog({ ...cfg, chatUrl: target.url, chatKey: target.key, toolsKey: "" })?.models.find(row => row.id === target.model) || null;
 }

@@ -1,16 +1,16 @@
 # Nova Collar
 
-Nova Collar is the desktop agent harness from Hungry Nova Labs LLC. One Electron window holds the conversation, a live terminal, and configured tools. It connects to a model server selected by the user.
+Nova Collar is the desktop agent harness from Hungry Nova Labs LLC. One Electron window holds the conversation, a live terminal, and configured tools. Choose a connected model server or download a model to run inside Nova Collar on this computer.
 
 ## Install
 
-**Current version: 0.6.1.** The [workspace notes](docs/WORKSPACE-UPGRADE.md) cover the new desktop layout, public-source boundaries, and local verification.
+**Current version: 0.6.2.** The [workspace notes](docs/WORKSPACE-UPGRADE.md) cover the new desktop layout, public-source boundaries, and local verification.
 
 The [Nova Tag integration notes](docs/TAG-INTEGRATION.md) describe bounded capacity waiting, observed progress, exact local history recall and explicit model settings. The [completion notes](docs/AUTONOMOUS-COMPLETION.md) describe verification, loop control and latency fixes in this iteration.
 
 **Public baseline.** Brings the [Hungry Nova Labs methodology](docs/HNL-METHODOLOGY.md) into the public harness: ordered saved guidance, deliberate questions, durable file/project verification, scoped repair lessons, bounded helpers, checkpoints and context budgeting. See the [implementation and limits](docs/PORTING-STATUS.md). Includes the [Wireshark MCP suite](docs/wireshark.md) for bounded traffic capture, local device discovery, anomaly evidence and opening captures in Wireshark, with visible tool calls and action approvals. Wireshark/TShark and optional Nmap are separately installed.
 
-**The Mac app.** Download `Nova-Collar-0.6.1-arm64.zip` from [v0.6.1](https://github.com/Hungry-Nova-Labs-LLC/nova-collar/releases/tag/v0.6.1), open the archive, drag Nova Collar to Applications, and open it. The ZIP contains the signed app with its stapled notarization ticket and neutral archive metadata. It is for Apple Silicon Macs with a declared macOS 13.5 minimum and includes the analysis engines. Runtime tests ran on the current Mac; the macOS 13.5 deployment targets were checked by compilation and native metadata inspection. See the release's verification receipt for the tested package and limits. The obsolete v0.2.0 downloads remain withdrawn. Earlier Windows x64 builds remain available; see below.
+**The Mac app.** Download `Nova-Collar-0.6.2-arm64.zip` from [v0.6.2](https://github.com/Hungry-Nova-Labs-LLC/nova-collar/releases/tag/v0.6.2), open the archive, drag Nova Collar to Applications, and open it. The ZIP contains the signed app with its stapled notarization ticket and neutral archive metadata. It is for Apple Silicon Macs with a declared macOS 13.5 minimum and includes the analysis engines. Runtime tests ran on the current Mac; the macOS 13.5 deployment targets were checked by compilation and native metadata inspection. See the release's verification receipt for the tested package and limits. The obsolete v0.2.0 downloads remain withdrawn. Earlier Windows x64 builds remain available; see below.
 
 To build it yourself from the checkout:
 
@@ -38,7 +38,7 @@ npm ci
 npm run release:win
 ```
 
-The output is `dist/Nova-Collar-0.6.0-x64.exe`. The installer adds Nova Collar to the Start menu and desktop. The window terminal and host commands use Windows PowerShell. The Windows build uses node-pty’s bundled Node-API binaries, so Visual Studio is not required for that dependency. The 0.3.0 analysis bundle has been engine-tested only on Apple Silicon; Windows headless analysis is experimental upstream and the Windows package has not been validated for this release.
+The output is `dist/Nova-Collar-0.6.2-x64.exe`. The installer adds Nova Collar to the Start menu and desktop. The window terminal and host commands use Windows PowerShell. The Windows build uses node-pty’s bundled Node-API binaries, so Visual Studio is not required for that dependency. The 0.3.0 analysis bundle has been engine-tested only on Apple Silicon; Windows headless analysis is experimental upstream and the Windows package has not been validated for this release.
 
 For local inference, install and start [Ollama for Windows](https://ollama.com/download/windows), then choose **On this computer (Ollama / LM Studio)**, scan, and select an installed model. Selecting a local model clears any previously configured fast/thinking roles so the whole turn stays local. The Hungry Nova endpoint and key remain saved for explicit model switching; there is no automatic cloud fallback. Local setup uses `http://127.0.0.1:11434/v1`. The model picker lists the models found on local servers at startup; use the local setup scan to refresh it. Select the exact installed tag shown by the local server. Model names are discovered, not downloaded automatically.
 
@@ -80,6 +80,46 @@ If nothing is found, start the model server and choose **Scan again**, enter a
 local address and model ID, or choose another provider. Installing Ollama or
 downloading a model requires an explicit action. Nova Collar does not read
 Ollama's or LM Studio's private configuration files.
+
+## Download and run a local chat model
+
+Choose the local model download option during setup, or open it from Settings
+or the model picker. Nova shows a few choices with their download size and
+memory guidance, and recommends one for this computer. The bundled llama.cpp
+runtime handles starting and stopping the model. No separate model server,
+terminal command, model account or API key is needed for these downloads.
+
+| Choice | Download | Memory guidance |
+| --- | --- | --- |
+| Qwen3.5 2B · Light | 1.28 GB | 8 GB or more |
+| Qwen3.5 4B · Balanced | 2.74 GB | 16 GB or more |
+| Qwen3.5 9B · More capable | 5.68 GB | 24 GB or more |
+
+These are Q4_K_M GGUF files published by Unsloth from Qwen's models, under
+[Apache 2.0](data/licenses/Qwen3.5-APACHE-2.0.txt). Download links use pinned
+revisions, exact sizes and SHA-256 hashes. Nova shows progress, supports cancel
+and resume, checks the complete file, and tries a local sample before selecting
+it. Memory guidance leaves room for the system; other running applications
+still affect what fits. A larger model is not a guarantee of a correct answer.
+
+Advanced users can import a compatible, single-file text GGUF. Nova copies it
+into its private model storage and keeps the original unchanged. Cloud-offloaded
+files must be downloaded to the computer first. Split models, vision projectors
+and embedding models are not chat imports. Compatibility and tool support are
+checked before use; some imported models can support chat without tools.
+
+Downloaded and imported models stay on disk across app updates. Switch models,
+unload the running model, remove an unused download, or return to the previous
+connection from the same controls. Existing provider settings stay saved, and
+there is no automatic cloud fallback. Model selection waits for current work
+to finish. Local chat inference runs on this computer; online tools still use
+their configured connections. The runtime unloads when idle and stops when
+Nova quits. Training Lab and model training remain separate and are never
+enabled by these controls.
+
+The bundled chat runtime currently supports Apple Silicon Macs. Windows,
+Linux and Intel Mac users can continue using their existing connected servers;
+new bundled runtimes and installers for those platforms are not validated here.
 
 ## Optional local adviser
 

@@ -155,6 +155,11 @@
   font-size: 12px;
 }
 
+.setup-more-options { flex-basis: 100%; margin-top: 4px; }
+.setup-more-options summary { color: var(--quiet); cursor: pointer; font-size: 12px; }
+.setup-more-options > .setup-acts { margin-top: 10px; }
+.setup-more-options summary:focus-visible { outline: 2px solid var(--glow); outline-offset: 3px; }
+
 /* Optional adviser: a separate step after the primary chat connection. */
 .decision-setup {
   inset: 0;
@@ -232,6 +237,44 @@
   .decision-setup { padding: 16px 14px; }
   .decision-setup h1 { font-size: 25px; }
   .decision-setup .setup-acts { flex-direction: column; align-items: stretch; }
+}
+
+/* Guided local primary chat models. */
+.local-chat-setup { inset: 0; width: min(840px, calc(100vw - 32px)); height: fit-content; max-height: calc(100vh - 64px); margin: auto; padding: 24px; gap: 12px; outline: none; }
+.local-chat-setup p { max-width: 70ch; }
+.local-chat-setup :is(.local-chat-machine, .local-chat-fit, .local-chat-retained) { color: var(--quiet); font-size: 12px; line-height: 1.5; }
+.local-chat-status { font-size: 12px; }
+.local-chat-status:empty { display: none; }
+.local-chat-cards { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+.local-chat-card { display: flex; flex-direction: column; gap: 10px; min-width: 0; padding: 14px; border: 1px solid var(--line); border-radius: 12px; background: var(--wash); }
+.local-chat-card.recommended { border-color: color-mix(in srgb, var(--glow) 55%, var(--line)); background: var(--tint); }
+.local-chat-card.current { box-shadow: inset 0 2px 0 var(--glow); }
+.local-chat-card-head { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; }
+.local-chat-card h2 { margin: 0; font-size: 15px; line-height: 1.35; overflow-wrap: anywhere; }
+.local-chat-badge { padding: 3px 7px; border-radius: 5px; color: var(--glow); background: var(--wash-hi); font: 10px/1.4 var(--chrome); }
+.local-chat-card p { font-size: 12px; line-height: 1.45; overflow-wrap: anywhere; }
+.local-chat-card :is(.local-chat-card-info,.local-chat-card-note) { color: var(--quiet); font-size: 11px; }
+.local-chat-card-note:empty { display: none; }
+.local-chat-card-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: auto; }
+.local-chat-card-actions button, .local-chat-advanced button { min-height: 34px; padding: 7px 10px; border-radius: 8px; font-size: 12px; white-space: normal; }
+.local-chat-card-actions button.go { background: var(--glow); color: var(--go-ink); }
+.local-chat-progress { display: grid; gap: 6px; padding: 12px; background: var(--wash); border-radius: 10px; }
+.local-chat-progress strong { font-size: 12px; font-weight: 600; }
+.local-chat-progress progress { width: 100%; height: 10px; accent-color: var(--glow); }
+.local-chat-progress p { font: 11px/1.4 var(--chrome); color: var(--quiet); }
+.local-chat-advanced, .local-chat-license { border-top: 1px solid var(--line); padding-top: 10px; }
+.local-chat-setup summary { color: var(--quiet); cursor: pointer; font-size: 12px; }
+.local-chat-setup details p { margin-top: 8px; color: var(--quiet); font-size: 12px; }
+.local-chat-license pre { max-height: 220px; overflow: auto; padding: 10px; border-radius: 8px; background: var(--paws); white-space: pre-wrap; user-select: text; font: 11px/1.45 var(--chrome); }
+.local-chat-setup > .setup-acts { position: sticky; bottom: -24px; z-index: 1; flex-shrink: 0; margin: 4px -24px -24px; padding: 12px 24px 24px; border-top: 1px solid var(--line); background: var(--sheet); }
+.local-chat-setup .setup-acts button { min-height: 36px; height: auto; padding: 8px 12px; white-space: normal; }
+.local-chat-setup :is(button,summary):focus-visible { outline: 2px solid var(--glow); outline-offset: 3px; }
+@media (max-width: 700px) {
+  .local-chat-cards { grid-template-columns: 1fr; }
+  .local-chat-setup { padding: 18px; }
+  .local-chat-setup > .setup-acts { bottom: -18px; margin-right: -18px; margin-bottom: -18px; margin-left: -18px; padding: 12px 18px 18px; }
+  .local-chat-card-head { flex-direction: row; align-items: center; justify-content: space-between; }
+  .local-chat-card-actions button.go { flex: 1; }
 }
 
 /* Spec: a document editor that takes the chat's place. */

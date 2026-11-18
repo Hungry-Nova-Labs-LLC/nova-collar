@@ -1,6 +1,6 @@
 {
   "name": "nova-collar",
-  "version": "0.6.1",
+  "version": "0.6.2",
   "license": "Apache-2.0",
   "private": true,
   "description": "Nova Collar \u2014 Hungry Nova Labs agent window: chat, terminal, this system",

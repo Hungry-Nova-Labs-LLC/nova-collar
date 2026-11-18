@@ -159,10 +159,13 @@ async function runScenario(){
    await until(()=>js('document.getElementById("setup").hidden'),'manual model selection');
    assert.equal(config.loadConfig().localModel,'fixture-second');assert.equal((await state()).ready,true);
   }else if(scenario==='none'){
-   await until(()=>js('!document.getElementById("setup").hidden&&document.getElementById("setup-acts").textContent.includes("Connect manually")'),'no-provider guidance');
+   await until(()=>js('!document.getElementById("setup").hidden&&document.getElementById("setup-acts").textContent.includes("Connect a model I already use")'),'no-provider guidance');
    const current=await state();assert.equal(current.ready,false);assert.equal(current.localModel,'');
+   assert.deepEqual(await js('Array.from(document.querySelectorAll("#setup-acts > button")).map(button=>button.textContent)'),['Download a chat model','Connect a model I already use']);
+   assert.equal(await js('document.getElementById("setup-more-options").open'),false);
+   await js('document.getElementById("setup-more-options").open=true');
    const labels=await js('Array.from(document.querySelectorAll("#setup-acts button")).map(button=>button.textContent)');
-   for(const label of ['Scan again','Connect manually','Choose another provider'])assert(labels.includes(label));
+   for(const label of ['Scan again','Connect manually','Connect a model I already use'])assert(labels.includes(label));
    assert.equal(current.setupReport.decision.mode,'none');
   }else if(scenario==='saved'){
    await until(()=>js('document.getElementById("setup").hidden'),'saved connection setup dismissal');

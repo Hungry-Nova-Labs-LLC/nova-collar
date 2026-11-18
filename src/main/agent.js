@@ -19,6 +19,8 @@ import {handoffFormatObservation} from "./handoff-format.js";
 import {createNewPathProbe} from "./new-path-probe.js";
 import { createContractReviewer, contractReviewObservation } from "./contract-review.js";
 import { createDecisionAdviser, decisionAdviceObservation } from "./decision-adviser.js";
+import { acquireLocalChatTarget } from "./local-chat.js";
+import { managedChatBody } from "./local-chat-transport.js";
 import { commandDiagnostic, submittedPythonFailureObservation, assertionFailureRepairObservation } from "./command-diagnostic.js";
 import { missingFileRecovery, recoveryCallMatches } from "./implementation-recovery.js";
 import { createExistingEditBridge, existingEditCallMatches, existingEditRequestTools } from "./existing-edit-recovery.js";
@@ -213,6 +215,16 @@ export async function complete(messages, cfg, onDelta, signal, extra = {}) {
 }
 
 async function completeOnce(messages, cfg, onDelta, signal, extra = {}) {
+  const requested = extra.target || chatTarget(cfg);
+  if (requested.kind === "managed-chat" && !requested.managedLease) {
+    const lease = await acquireLocalChatTarget(requested, { signal });
+    try { return await completeOnceReady(messages, cfg, onDelta, signal, { ...extra, target: lease.target }); }
+    finally { await lease.release(); }
+  }
+  return completeOnceReady(messages, cfg, onDelta, signal, extra);
+}
+
+async function completeOnceReady(messages, cfg, onDelta, signal, extra = {}) {
   aborted(signal);
   const target = extra.target || chatTarget(cfg);
   const requestSecrets = [target.local && target.key === "ollama" && !cfg.localKey ? "" : target.key,
@@ -245,6 +257,7 @@ async function completeOnce(messages, cfg, onDelta, signal, extra = {}) {
     delete body.tools;
     delete body.tool_choice;
   }
+  if (target.kind === "managed-chat") Object.assign(body, managedChatBody(body));
   const contextSession = extra.requestKind === "helper" ? "" : extra.sessionId || "";
   // Budget the separators too. Normalize again after compaction so the saved
   // request snapshot and actual wire use exactly the same message shape.
@@ -312,7 +325,7 @@ async function completeOnce(messages, cfg, onDelta, signal, extra = {}) {
       body: JSON.stringify(body),
       signal: linked,
     });
-    if ([400, 422].includes(response.status) && body.tools?.length && extra.toolChoice && extra.toolChoice !== "auto") {
+    if (target.kind !== "managed-chat" && [400, 422].includes(response.status) && body.tools?.length && extra.toolChoice && extra.toolChoice !== "auto") {
       const wasRequired = body.tool_choice === "required";
       body.tool_choice = "auto";
       response = await fetch(`${target.url}/chat/completions`, {

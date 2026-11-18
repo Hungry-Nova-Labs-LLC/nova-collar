@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.6.2 — Guided local chat models
+
+- Offer a local chat download option during first launch, in Settings and in the model picker, with clear size and memory guidance for Qwen3.5 2B, 4B and 9B.
+- Download pinned Apache 2.0 GGUF files from their publisher, resume cancelled downloads, verify exact sizes and hashes, and check local chat and tool compatibility before use. No separate server setup or model API key is required.
+- Import compatible single-file text GGUF models into private storage without changing the original. Detect offloaded files, split models, embedding models and vision projectors before attempting to run them.
+- Start a private local chat runtime on demand, keep downloaded models across updates, unload idle inference, and provide explicit switch, unload, remove and previous-connection controls. Preserve existing provider settings and require current work to finish before changing its model.
+- Adapt named tool requests faithfully for the bundled runtime while retaining the existing streaming, permissions and verification requirements. Local model inference does not start Training Lab or training jobs.
+- Retain Qwen, Unsloth and runtime attribution. Bundled local chat is first provided for Apple Silicon Macs; other platforms can continue using connected model servers.
+
 ## 0.6.1 — Guided local decision adviser
 
 - Offer an optional free d1-Omni-2B adviser during setup and in Settings, with two clear initial choices and no model account, Python setup or terminal commands.

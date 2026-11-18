@@ -3,6 +3,7 @@ const input = document.getElementById("input");
 const eyes = document.getElementById("eyes");
 const creature = document.getElementById("creature");
 const wake = document.getElementById("wake");
+let bootModelNotice = null;
 const pinBtn = document.getElementById("pin");
 const dockBtn = document.getElementById("dock-btn");
 const termBtn = document.getElementById("term-btn");
@@ -317,17 +318,27 @@ function renderPacks(state) {
 
 function laneOptions(state, current) {
   const options = new Map();
-  for (const row of state.models || []) options.set(row.id, row.label || row.id);
-  if (current && !options.has(current)) options.set(current, current);
+  for (const row of state.models || []) if (!row.managed) options.set(row.id, row.label || row.id);
+  if (current && !options.has(current) && !(state.models || []).some(row => row.managed && row.id === current)) options.set(current, current);
   return options;
 }
 
 function renderModels(state) {
+  window.syncLocalChatState?.(state);
+  if (state.ready && bootModelNotice) {
+    if (bootModelNotice.isConnected) fillMessage(bootModelNotice, "Ready for your message.", true);
+    bootModelNotice = null;
+  }
   modelsList.innerHTML = "";
   const active = document.createElement("p");
   active.className = "model-active";
   active.textContent = `${state.host || "This system"} · ${state.split?.on ? `Fast: ${state.split.fast} + Think: ${state.split.think}` : state.local ? `Local: ${state.localModel}` : `Hosted: ${state.model}`}`;
+  if (state.managedLocal) active.textContent = `On this computer · ${state.localModelLabel || "Local chat model"}`;
   modelsList.append(active);
+  if (window.pup.localChatStatus) {
+    const local = document.createElement("button");local.type="button";local.className="chat-item";local.id="models-local-chat-open";
+    local.textContent="Download or open a local chat model";local.onclick=()=>window.openLocalChatSetup?.();modelsList.append(local);
+  }
   const refresh = document.createElement("button");
   refresh.className = "chat-item";
   refresh.textContent = "Refresh available models";
@@ -396,11 +407,12 @@ function renderModels(state) {
   const localRows = (state.localModels || []).map((row) => ({ ...row, localChoice: true, label: row.model, hint: "local" }));
   let group = "";
   for (const row of [...localRows, ...(state.models || []).filter((row) => row.id !== "local-3.8" || !localRows.length)]) {
-    const nextGroup = row.localChoice || row.id === "local-3.8" ? "Local Ollama / LM Studio" : "Hosted provider";
+    const nextGroup = row.managed ? "On this computer" : row.localChoice || row.id === "local-3.8" ? "Local Ollama / LM Studio" : "Hosted provider";
     if (group !== nextGroup) { const label = document.createElement("p"); label.className = "sheet-sub"; label.textContent = nextGroup; modelsList.append(label); group = nextGroup; }
     const btn = document.createElement("button");
     btn.type = "button";
     btn.className = "chat-item";
+    if (row.managed) btn.dataset.managedModel = row.id;
     if (row.localChoice ? state.local && row.model === state.localModel && row.url === state.chatUrl : row.id === state.model) btn.classList.add("current");
     const title = document.createElement("span");
     title.textContent = row.label || row.id;
@@ -410,6 +422,7 @@ function renderModels(state) {
     btn.append(title, hint);
     btn.onclick = async () => {
       if (busy) return;
+      if (row.managed) { await window.openLocalChatSetup?.(); return; }
       const next = row.localChoice ? (await window.pup.setupUse({ url: row.url, model: row.model })).state : await window.pup.setModel(row.id);
       if (!next) return;
       showModel(next.model, next.models, next.split);
@@ -977,10 +990,14 @@ async function boot() {
   paintGoal(state.goal || "", state.archive || []);
   paintSense(state.intuition);
   if (state.messages?.length) paintMessages(state.messages);
-  else if (!state.ready) add("assistant", "Choose a model server to begin.");
+  else if (!state.ready) {
+    bootModelNotice = add("assistant", "Choose a model to begin. You can download one for this computer or connect a provider.");
+    bootModelNotice.dataset.setupNotice = "primary-model";
+  }
   else if (state.setupReport?.decision?.mode === "auto") add("assistant", `Connected to ${state.setupReport.decision.selected.name}: ${state.setupReport.decision.selected.model}. You can change it in Models.`);
   else add("assistant", "Ready for your message.");
   paintConversation(state.conversation);
+  window.syncLocalChatState?.(state);
   if (!state.ready || (!state.setupDone && !state.hasExplicitConnection)) window.openSetup?.(state.setupReport);
   else window.maybeOfferDecisionSetup?.(state);
 }
@@ -1349,7 +1366,16 @@ window.afterSetup = (state) => {
   if (!state) return;
   wake.hidden = state.ready;
   showModel(state.model, state.models, state.split);
+  window.syncLocalChatState?.(state);
   window.maybeOfferDecisionSetup?.(state);
+};
+window.applyLocalChatState = (state, offerAdviser = false) => {
+  if (!state) return;
+  wake.hidden=state.ready;
+  showModel(state.model,state.models,state.split);
+  renderModels(state);
+  window.syncLocalChatState?.(state);
+  if(offerAdviser && state.ready) window.maybeOfferDecisionSetup?.(state);
 };
 
 function paintVoices(voices, current = "") {

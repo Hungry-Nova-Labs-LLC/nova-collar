@@ -44,7 +44,7 @@ export function modelRequestSettings(cfg, target) {
     const data = JSON.parse(text);
     if (data.version !== 1 || !Array.isArray(data.profiles) || data.profiles.length > 128) return {};
     const rows = data.profiles.map(profile).filter(Boolean);
-    return rows.find((row) => row.url === endpoint(target.url) && row.model === target.model) || {};
+    return rows.find((row) => row.url === endpoint(target.profileUrl || target.url) && row.model === (target.profileModel || target.model)) || {};
   } catch { return {}; }
 }
 

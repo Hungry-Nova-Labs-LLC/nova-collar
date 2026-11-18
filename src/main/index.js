@@ -40,6 +40,8 @@ import { cleanModelHistory } from "./model-history.js";
 import { acknowledgeRecoveryOperation, recoverSession, recoveryOperations, recoveryPointSummaries } from "./recovery-points.js";
 import * as decisionLocal from "./decision-local.js";
 import { registerDecisionLocalIpc } from "./decision-local-ipc.js";
+import * as localChat from "./local-chat.js";
+import { registerLocalChatIpc } from "./local-chat-ipc.js";
 
 const pty = createRequire(import.meta.url)("node-pty");
 
@@ -83,6 +85,16 @@ registerDecisionLocalIpc({ ipcMain, fromWindow, api: decisionLocal, send,
     return { ok: !error, ...(error ? { error: "The model license could not be opened." } : {}) };
   },
 });
+const primaryRouteIdle = () => !turnAbort && !boardBusy && !specAbort && !readOnlySession;
+const primaryRouteMutationIdle = () => primaryRouteIdle() && !localChat.localChatRoutingBusy();
+const routeHeld = () => ({ ok: false, errorCode: "active-turn", error: "Finish or stop active work before changing the primary model." });
+registerLocalChatIpc({ ipcMain, fromWindow, api: localChat, snapshot, send, canChange: primaryRouteIdle, markSetupDone,
+  pickFile: async () => {
+    const picked = await dialog.showOpenDialog(win, { title: "Choose a GGUF chat model", properties: ["openFile"], filters: [{ name: "GGUF model", extensions: ["gguf"] }] });
+    return picked.canceled ? "" : picked.filePaths[0] || "";
+  },
+});
+async function externalPrimarySaved() { await localChat.localChatExternalChange(); }
 
 function boundsPath() {
   return join(APP_HOME, "window.json");
@@ -243,7 +255,7 @@ let boardAbort = null;
 async function runScheduled(job) {
   const task = job?.task;
   const bot = job?.bot;
-  if (turnAbort || boardBusy || !task?.title || !bot?.id) return { skip: true };
+  if (turnAbort || boardBusy || localChat.localChatRoutingBusy() || !task?.title || !bot?.id) return { skip: true };
   boardBusy = true;
   send({ type: "board", tasks: publicTasks() });
   const session = readSession(bot.id);
@@ -496,7 +508,7 @@ app.on("before-quit", event => {
   if (!quitReady) {
     event.preventDefault();
     if (!quitCleanup) {
-      const pending = [closeTerminal(), decisionLocal.stopDecisionLocal()];
+      const pending = [closeTerminal(), decisionLocal.stopDecisionLocal(), localChat.stopLocalChatRuntime()];
       if (analysisManager.sessions.size) pending.push(analysisManager.closeAll());
       if (networkRuntime.client || networkRuntime.connecting) pending.push(networkRuntime.close());
       quitCleanup = Promise.allSettled(pending).finally(()=>{
@@ -556,7 +568,7 @@ ipcMain.handle("setup:scan", async (event, options = {}) => {
     probes:[],environment:{},
   } : {cfg});
   localServers = report.found;
-  if (!localUrl && !cfg.hasExplicitConnection) {
+  if (!localUrl && !cfg.hasExplicitConnection && primaryRouteMutationIdle()) {
     report.decision = bootstrapConnection(report);
     if (report.decision.mode === "auto") report.state = publicState();
   }
@@ -565,15 +577,19 @@ ipcMain.handle("setup:scan", async (event, options = {}) => {
 
 ipcMain.handle("setup:install", async (event) => {
   if (!fromWindow(event)) return { ok: false };
+  if (!primaryRouteMutationIdle()) return routeHeld();
   const result = await ensureOllama((line) => send({ type: "setup-log", line }));
   if (!result.ok) return result;
+  if (!primaryRouteMutationIdle()) return routeHeld();
   saveLocalModel({ url: result.url, model: result.model });
+  await externalPrimarySaved();
   markSetupDone();
   return { ...result, state: snapshot() };
 });
 
-ipcMain.handle("setup:use", (event, pick) => {
+ipcMain.handle("setup:use", async (event, pick) => {
   if (!fromWindow(event)) return { ok: false };
+  if (!primaryRouteMutationIdle()) return routeHeld();
   const url = normalizeLocalUrl(pick?.url);
   const model = String(pick?.model || "");
   if (!url) {
@@ -582,6 +598,7 @@ ipcMain.handle("setup:use", (event, pick) => {
   try {
     const saved = saveLocalModel({ url, model, apiKey:pick?.apiKey === undefined ? undefined : String(pick.apiKey || "").trim() });
     if (saved.urlRejected) return {ok:false,error:saved.urlRejected};
+    await externalPrimarySaved();
     markSetupDone();
     return { ok: true, state: snapshot() };
   } catch {return {ok:false,error:"Nova Collar could not save its connection. Check that its local profile is writable, then try again."};}
@@ -595,8 +612,9 @@ ipcMain.handle("setup:skip", (event) => {
 
 ipcMain.handle("keys", async (event, keys) => {
   if (!fromWindow(event)) return {};
+  if (!primaryRouteMutationIdle()) return routeHeld();
   const result = saveKeys(keys && typeof keys === "object" ? keys : {});
-  if (!result?.urlRejected) await refreshCatalog(loadConfig());
+  if (!result?.urlRejected) { await externalPrimarySaved(); await refreshCatalog(loadConfig()); }
   const state = snapshot();
   return result && result.urlRejected ? { ...state, urlRejected: result.urlRejected } : state;
 });
@@ -616,15 +634,20 @@ ipcMain.handle("models:hosted-pair", (event) => {
   throw new Error("The retired model pair is unavailable. Choose fast and thinking models explicitly from the current catalog.");
 });
 
-ipcMain.handle("model", (event, id) => {
+ipcMain.handle("model", async (event, id) => {
   if (!fromWindow(event)) return {};
-  saveKeys({ model: String(id || "") });
+  if (!primaryRouteMutationIdle()) return routeHeld();
+  const result = saveKeys({ model: String(id || "") });
+  if (result?.urlRejected) return { ...snapshot(), error: result.error || "Choose a valid primary model." };
+  await externalPrimarySaved();
   return snapshot();
 });
 
-ipcMain.handle("model:lane", (event, body) => {
+ipcMain.handle("model:lane", async (event, body) => {
   if (!fromWindow(event)) return {};
+  if (!primaryRouteMutationIdle()) return routeHeld();
   saveLane({ lane: String(body?.lane || ""), model: String(body?.model || "") });
+  await externalPrimarySaved();
   return snapshot();
 });
 
@@ -893,6 +916,7 @@ async function chatFromWindow(event, payload) {
 }
 
 async function runWindowLead(event, payload, text) {
+  if (localChat.localChatRoutingBusy()) return { ok: false, error: "Wait for the local model operation to finish before starting a turn." };
   const pack = safePack(typeof payload === "object" && payload ? payload.pack : "");
   const cfg = loadConfig();
   if (platform() === "darwin" && !existsSync(BIN)) {

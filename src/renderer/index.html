@@ -104,6 +104,11 @@
           <strong>settings</strong>
           <button type="button" class="sheet-x" title="Close" aria-label="Close">×</button>
         </div>
+        <section id="local-chat-settings" aria-labelledby="local-chat-settings-title">
+          <p class="sheet-sub" id="local-chat-settings-title">chat models on this computer</p>
+          <p class="sheet-note" id="local-chat-summary">Download a model or open a GGUF file to chat locally.</p>
+          <div class="packs"><button type="button" id="local-chat-open">Choose a local chat model</button></div>
+        </section>
         <section id="decision-local-settings" aria-labelledby="decision-local-settings-title">
           <p class="sheet-sub" id="decision-local-settings-title">local decision adviser</p>
           <p class="sheet-note" id="decision-local-summary">Optional help choosing a next step after a failed check.</p>
@@ -331,6 +336,32 @@
         <footer><button type="submit" id="question-submit" disabled>Send answer</button></footer>
       </form>
     </dialog>
+    <section class="setup local-chat-setup" id="local-chat-setup" role="dialog" aria-modal="true" aria-labelledby="local-chat-title" aria-describedby="local-chat-description" tabindex="-1" hidden>
+      <p class="setup-kicker">Chat on this computer</p>
+      <h1 id="local-chat-title">Choose a local chat model</h1>
+      <p id="local-chat-description">Download once, then chat on your own computer. No model account or API key is needed. These models can also use Nova’s tools when supported.</p>
+      <p class="local-chat-machine" id="local-chat-machine"></p>
+      <p class="local-chat-fit">Memory is shared with your other apps and the optional decision adviser. Larger models need more room.</p>
+      <div class="local-chat-progress" id="local-chat-progress-wrap" hidden>
+        <strong id="local-chat-progress-stage"></strong>
+        <progress id="local-chat-progress" max="100" aria-label="Local chat model setup"></progress>
+        <p id="local-chat-progress-text" role="status" aria-live="polite"></p>
+      </div>
+      <p class="local-chat-status" id="local-chat-status" role="status" aria-live="polite"></p>
+      <div class="local-chat-cards" id="local-chat-cards"></div>
+      <details class="local-chat-advanced" id="local-chat-advanced">
+        <summary>Have a GGUF file already?</summary>
+        <p>Open a model file you trust. Nova keeps its own copy, checks compatibility, and tests whether it can use tools. Some models support chat only.</p>
+        <button type="button" id="local-chat-import">Open a GGUF file</button>
+      </details>
+      <details class="local-chat-license" id="local-chat-license">
+        <summary>Model licenses and credits</summary>
+        <p>Qwen models by Alibaba Cloud. GGUF quantizations published by Unsloth AI. The three downloads use Apache 2.0. Imported files keep their own licenses.</p>
+        <pre id="local-chat-license-text">Open this section to read the included Apache 2.0 license.</pre>
+      </details>
+      <p class="local-chat-retained">Downloads stay on this computer across app updates. The decision adviser is a separate optional feature.</p>
+      <div class="setup-acts" id="local-chat-actions"></div>
+    </section>
     <section class="setup decision-setup" id="decision-setup" role="dialog" aria-modal="true" aria-labelledby="decision-setup-title" aria-describedby="decision-setup-body" tabindex="-1" hidden>
       <p class="setup-kicker" id="decision-setup-kicker">Optional · recommended</p>
       <h1 id="decision-setup-title">A little help with the next step</h1>
@@ -413,6 +444,7 @@
     <script src="steps.js"></script>
     <script src="credits.js"></script>
     <script src="setup-ui.js"></script>
+    <script src="local-chat-ui.js"></script>
     <script src="decision-setup-ui.js"></script>
     <script src="crew-render.js"></script>
     <script src="app.js"></script>

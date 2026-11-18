@@ -16,9 +16,9 @@ export function requestBudget(cfg, target, extra = {}) {
   // A local server is explicitly configured with this window in num_ctx. Its
   // budget must use that same effective window, rather than a hosted fallback.
   const contextTokens = target.local
-    ? Math.min(catalogContext || Infinity, explicitContext || 12288)
+    ? Math.min(catalogContext || Infinity, explicitContext || (target.kind === "managed-chat" ? catalogContext || 8192 : 12288))
     : catalogContext || explicitContext || (lean ? 12288 : 32768);
-  const requested = explicitOutput || (lean ? 1536 : catalogOutput ? 8192 : 0);
+  const requested = explicitOutput || (target.kind === "managed-chat" ? 4096 : lean ? 1536 : catalogOutput ? 8192 : 0);
   const outputTokens = Math.min(requested || 8192, catalogOutput || Infinity, Math.max(256, Math.floor(contextTokens / 4)));
   return { contextTokens, outputTokens, lean };
 }

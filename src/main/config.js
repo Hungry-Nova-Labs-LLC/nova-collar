@@ -7,6 +7,7 @@ import { allowServiceUrl, publicHttpsUrl } from "./safe.js";
 import { lanesFrom, splitLabel } from "./split.js";
 import { getCatalog, catalogState, isEmbeddingOnlyModel } from "./model-catalog.js";
 import { mainProfileHome, runtimeElectronApp } from "./profile-paths.js";
+import { applyLocalChatSelection, clearLocalChatSelection, MANAGED_CHAT_PREFIX, managedSettingsUrl } from "./local-chat-selection.js";
 
 const app = runtimeElectronApp();
 const srcRoot = join(dirname(fileURLToPath(import.meta.url)), "../..");
@@ -69,7 +70,7 @@ export function normalizeModel(id) {
 }
 
 export function isLocalModel(id) {
-  return normalizeModel(id) === LOCAL_ID;
+  return normalizeModel(id) === LOCAL_ID || String(id || "").startsWith(MANAGED_CHAT_PREFIX);
 }
 
 const DEFAULTS = {
@@ -117,7 +118,7 @@ function parseEnv(text, into) {
   }
 }
 
-export function loadConfig() {
+export function loadBaseConfig() {
   ensureHome();
   const cfg = { ...DEFAULTS, ...process.env };
   const explicit = { ...process.env };
@@ -154,6 +155,8 @@ export function loadConfig() {
   };
 }
 
+export function loadConfig() { return applyLocalChatSelection(loadBaseConfig()); }
+
 function writeEnv(current, patch = {}) {
   const next = {
     HNL_CHAT_URL: patch.chatUrl ?? current.chatUrl,
@@ -188,12 +191,16 @@ function writeEnv(current, patch = {}) {
   try {
     writeFileSync(temporary, Object.entries(next).map(([key, value]) => `${key}=${clean(value)}`).join("\n") + "\n", {mode:0o600,flag:"wx",flush:true});
     renameSync(temporary,destination);
+    // A successful external save invalidates the selection's env generation
+    // before cleanup; never serialize an in-memory managed route into env.
+    try { clearLocalChatSelection(APP_HOME); } catch { /* Stale generation is ignored. */ }
   } finally {rmSync(temporary,{force:true});}
   return loadConfig();
 }
 
 export function saveKeys({ chatKey, toolsKey, model, chatUrl }) {
   ensureHome();
+  if (String(model || "").startsWith(MANAGED_CHAT_PREFIX)) return { ...publicState(), urlRejected: "Choose managed GGUF models from the local model picker." };
   // A caller-supplied chat endpoint must be a public https URL. Reject a blocked,
   // private, or malformed address instead of silently falling back to the default.
   let url = chatUrl;
@@ -204,12 +211,12 @@ export function saveKeys({ chatKey, toolsKey, model, chatUrl }) {
   }
   const reset = model !== undefined || chatUrl !== undefined
     ? { fastUrl: "", fastModel: "", fastKey: "", thinkUrl: "", thinkModel: "", thinkKey: "" } : {};
-  return writeEnv(loadConfig(), { ...reset, chatKey, toolsKey, model, chatUrl: url });
+  return writeEnv(loadBaseConfig(), { ...reset, chatKey, toolsKey, model, chatUrl: url });
 }
 
 export function saveLocalModel({ url, model, apiKey }) {
   ensureHome();
-  const current = loadConfig();
+  const current = loadBaseConfig();
   const localUrl = allowServiceUrl(url, "local");
   const localModel = String(model || "").trim();
   if (!localUrl || !localModel || localModel.length > 512 || /[\x00-\x1f\x7f]/.test(localModel) || isEmbeddingOnlyModel({id:localModel})) {
@@ -235,11 +242,12 @@ export function saveLane({ lane, model }) {
   ensureHome();
   const which = lane === "fast" ? "fast" : lane === "think" ? "think" : "";
   if (!which) return loadConfig();
-  const cfg = loadConfig();
+  const cfg = loadBaseConfig();
   const id = String(model || "").trim();
   if (!id) {
     return writeEnv(cfg, { [`${which}Model`]: "", [`${which}Url`]: "" });
   }
+  if (id.startsWith(MANAGED_CHAT_PREFIX)) throw new Error("Managed GGUF models are selected as the primary model.");
   const resolved = normalizeModel(id);
   const url = isLocalModel(resolved) ? cfg.localUrl : cfg.chatUrl;
   return writeEnv(cfg, { [`${which}Model`]: isLocalModel(resolved) ? cfg.localModel : resolved, [`${which}Url`]: url, [`${which}Key`]: "" });
@@ -263,6 +271,8 @@ export function readMemory() {
 }
 
 export function chatTarget(cfg = loadConfig()) {
+  if (cfg.managedChat) return { kind: "managed-chat", managedChatId: cfg.managedChat.id, url: managedSettingsUrl(cfg.managedChat.id),
+    model: cfg.managedChat.id, key: "", local: true, managedMetadata: { context: cfg.managedChat.contextTokens, output: 4096, tools: cfg.managedChat.tools } };
   if (isLocalModel(cfg.model)) {
     return { url: cfg.localUrl, model: cfg.localModel, key: cfg.localKey || "ollama", local: true };
   }
@@ -274,8 +284,10 @@ function modelChoices(cfg) {
   const rows = catalog ? [MODELS[0], ...catalog.models] : [...MODELS];
   for (const model of [cfg.model, cfg.fastModel, cfg.thinkModel]) {
     const id = model && normalizeModel(model);
+    if (id?.startsWith(MANAGED_CHAT_PREFIX)) continue;
     if (id && !isEmbeddingOnlyModel({ id }) && !rows.some(row => row.id === id)) rows.push({ id, label: id, hint: "saved" });
   }
+  if (cfg.managedChat) rows.push({ id: cfg.model, label: cfg.managedChat.label, hint: "on this computer", managed: true });
   return rows;
 }
 
@@ -287,12 +299,13 @@ export function publicState(cfg = loadConfig()) {
     hasToolsKey: Boolean(cfg.toolsKey),
     hasComfy: Boolean(cfg.comfyUrl || cfg.comfyFallback),
     model: cfg.model,
-    models: modelChoices(cfg).filter(row=>row.id !== LOCAL_ID || cfg.localModel).map((row) => row.id === LOCAL_ID ? { ...row, label: `Local: ${cfg.localModel}` } : row),
+    models: modelChoices(cfg).filter(row=>row.id !== LOCAL_ID || (cfg.localModel && !cfg.managedChat)).map((row) => row.id === LOCAL_ID ? { ...row, label: `Local: ${cfg.localModel}` } : row),
     ...catalogState(cfg),
     chatUrl: isLocalModel(cfg.model) ? cfg.localUrl : cfg.chatUrl,
     toolsUrl: cfg.toolsUrl,
     local: isLocalModel(cfg.model),
     localModel: cfg.localModel,
+    managedLocal: Boolean(cfg.managedChat), managedModelId: cfg.managedChat?.id || "", localModelLabel: cfg.managedChat?.label || cfg.localModel,
     split: splitLabel(lanesFrom(cfg, chatTarget(cfg))),
     providerUrl: cfg.chatUrl,
     lanes: Object.fromEntries(["fast", "think"].map((lane) => [lane, cfg[`${lane}Url`] === cfg.localUrl && cfg[`${lane}Model`] === cfg.localModel ? LOCAL_ID : cfg[`${lane}Model`] || ""])),
